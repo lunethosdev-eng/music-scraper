@@ -19,7 +19,6 @@ app.use(express.json());
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ajbmpgnzkgtcmulocftd.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Inicialización de Supabase con soporte de WebSocket para Node.js
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
   realtime: { transport: ws }
@@ -31,26 +30,80 @@ if (!fs.existsSync(TEMP_DIR)) {
 }
 
 // ---------------------------------------------------------------------------
-// FUNCIONES AUXILIARES: APPLE MUSIC & LRCLIB (LETRAS KARAOKE)
+// GESTOR DE COLA DE DESCARGAS EN SEGUNDO PLANO
 // ---------------------------------------------------------------------------
+let downloadQueue = [];
+let isProcessingQueue = false;
 
-// Buscar portada HD en Apple Music iTunes Search API
+// Lista inicial de canciones / artistas populares en tendencia (Laufey, Her's, Grupo Frontera, Eve, etc.)
+const INITIAL_SEED_ARTISTS = [
+  "Laufey - From The Start",
+  "Laufey - Valentine",
+  "Hers - What Once Was",
+  "Grupo Frontera - un X100to",
+  "Eve - Kaikai Kitan",
+  "Coqueta - Grupo Frontera"
+];
+
+function addToQueue(query) {
+  const existing = downloadQueue.find(item => item.query.toLowerCase() === query.toLowerCase());
+  if (existing) return existing;
+
+  const newItem = {
+    id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
+    query,
+    status: 'pending', // 'pending', 'downloading', 'completed', 'failed'
+    progressMessage: 'En espera',
+    addedAt: new Date()
+  };
+  downloadQueue.push(newItem);
+  processQueue();
+  return newItem;
+}
+
+async function processQueue() {
+  if (isProcessingQueue) return;
+  isProcessingQueue = true;
+
+  while (true) {
+    const item = downloadQueue.find(i => i.status === 'pending');
+    if (!item) break;
+
+    item.status = 'downloading';
+    item.progressMessage = 'Descargando audio y metadatos...';
+
+    try {
+      await autoScrapeAndSave(item.query);
+      item.status = 'completed';
+      item.progressMessage = '¡Completado con éxito!';
+    } catch (err) {
+      console.error(`Error procesando "${item.query}":`, err.message);
+      item.status = 'failed';
+      item.progressMessage = `Error: ${err.message}`;
+    }
+  }
+
+  isProcessingQueue = false;
+}
+
+// ---------------------------------------------------------------------------
+// AUXILIARES: METADATOS Y YOUTUBE FALLBACK
+// ---------------------------------------------------------------------------
 async function fetchAppleMusicCover(term) {
   try {
     const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=song&limit=1`;
-    const response = await axios.get(url);
+    const response = await axios.get(url, { timeout: 5000 });
     if (response.data.results && response.data.results.length > 0) {
       const track = response.data.results[0];
       const highResCover = track.artworkUrl100.replace('100x100bb', '1000x1000bb');
       return { coverUrl: highResCover, album: track.collectionName, artist: track.artistName, title: track.trackName };
     }
   } catch (err) {
-    console.error('Error buscando portada en Apple Music:', err.message);
+    console.error('Apple Music API fallback:', err.message);
   }
   return { coverUrl: null, album: null, artist: null, title: null };
 }
 
-// Parsear formato de letras sincronizadas LRC a un arreglo JSON
 function parseLrc(lrcText) {
   if (!lrcText) return [];
   const lines = lrcText.split('\n');
@@ -71,11 +124,11 @@ function parseLrc(lrcText) {
   return result;
 }
 
-// Buscar letras sincronizadas en LRCLIB API
 async function fetchSyncedLyrics(artist, title) {
   try {
     const response = await axios.get('https://lrclib.net/api/get', {
-      params: { artist_name: artist, track_name: title }
+      params: { artist_name: artist, track_name: title },
+      timeout: 4000
     });
     if (response.data && response.data.syncedLyrics) {
       return parseLrc(response.data.syncedLyrics);
@@ -83,45 +136,45 @@ async function fetchSyncedLyrics(artist, title) {
   } catch (err) {
     try {
       const searchRes = await axios.get('https://lrclib.net/api/search', {
-        params: { q: `${artist} ${title}` }
+        params: { q: `${artist} ${title}` },
+        timeout: 4000
       });
       if (searchRes.data && searchRes.data.length > 0 && searchRes.data[0].syncedLyrics) {
         return parseLrc(searchRes.data[0].syncedLyrics);
       }
-    } catch (searchErr) {
-      console.error('Error buscando letras sincronizadas:', searchErr.message);
-    }
+    } catch (e) {}
   }
   return [];
 }
 
-// Proceso automático de scraping y subida a Supabase
 async function autoScrapeAndSave(searchQuery) {
   const trackId = Date.now().toString();
   const outputPath = path.join(TEMP_DIR, `${trackId}.mp3`);
 
   try {
-    // 1. Descargar audio con yt-dlp buscando por término en YouTube
-    const downloadCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" -x --audio-format mp3 --audio-quality 0 -o "${outputPath}" --print "%(title)s"`;
-    const { stdout: ytTitle } = await execPromise(downloadCmd);
+    // Descarga robusta con yt-dlp obteniendo título e imagen original de respaldo
+    const downloadCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" --no-playlist --no-check-certificates -x --audio-format mp3 --audio-quality 0 -o "${outputPath}" --print "%(title)s" --print "%(thumbnail)s"`;
+    const { stdout } = await execPromise(downloadCmd);
+
+    const lines = stdout.trim().split('\n');
+    const ytTitle = lines[0] || searchQuery;
+    const ytThumbnail = lines[1] || null;
 
     if (!fs.existsSync(outputPath)) {
-      throw new Error('No se pudo descargar el archivo MP3');
+      throw new Error('yt-dlp no pudo generar el archivo MP3');
     }
 
-    const cleanYtTitle = (ytTitle || searchQuery).trim().replace(/\r?\n|\r/g, '');
-
-    // 2. Obtener Metadatos y Portada en Apple Music
+    // Intentar obtener portadas HD de Apple Music
     const appleData = await fetchAppleMusicCover(searchQuery);
-    const finalTitle = appleData.title || cleanYtTitle.split('-')[1]?.trim() || cleanYtTitle;
-    const finalArtist = appleData.artist || cleanYtTitle.split('-')[0]?.trim() || 'Artista Desconocido';
+    const finalTitle = appleData.title || ytTitle.split('-')[1]?.trim() || ytTitle;
+    const finalArtist = appleData.artist || ytTitle.split('-')[0]?.trim() || 'Artista';
+    const finalCover = appleData.coverUrl || ytThumbnail;
 
-    // 3. Obtener Letras Sincronizadas
     const lyrics = await fetchSyncedLyrics(finalArtist, finalTitle);
 
-    // 4. Subir MP3 a Supabase Storage
+    // Subida a Supabase Storage
     const fileBuffer = fs.readFileSync(outputPath);
-    const audioStoragePath = `tracks/${trackId}_${finalArtist.replace(/[^a-zA-Z0-0]/g, '_')}.mp3`;
+    const audioStoragePath = `tracks/${trackId}_${finalArtist.replace(/[^a-zA-Z0-9]/g, '_')}.mp3`;
 
     const { error: uploadErr } = await supabase.storage
       .from('audio-files')
@@ -130,7 +183,7 @@ async function autoScrapeAndSave(searchQuery) {
     if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     if (uploadErr) throw uploadErr;
 
-    // 5. Insertar en la Base de Datos Supabase
+    // Registro en Base de Datos
     const { data: dbTrack, error: dbErr } = await supabase
       .from('tracks')
       .insert([{
@@ -138,7 +191,7 @@ async function autoScrapeAndSave(searchQuery) {
         artist: finalArtist,
         album: appleData.album || 'Single',
         audio_path: audioStoragePath,
-        cover_url: appleData.coverUrl,
+        cover_url: finalCover,
         lyrics: lyrics,
         source_platform: 'auto-scraped'
       }])
@@ -154,85 +207,46 @@ async function autoScrapeAndSave(searchQuery) {
 }
 
 // ---------------------------------------------------------------------------
-// ENDPOINTS DE LA API
+// ENDPOINTS
 // ---------------------------------------------------------------------------
 
-// Búsqueda Inteligente: Si no existe en la BD, se descarga automáticamente
+// Ping endpoint para mantener despierto Render
+app.get('/api/ping', (req, res) => res.send('PONG'));
+
+// Obtener estado de la cola de descargas
+app.get('/api/queue', (req, res) => {
+  res.json(downloadQueue.slice(-15).reverse()); // Retorna las últimas 15 tareas
+});
+
+// Búsqueda inteligente: si existe en BD la retorna, sino la envía a la cola
 app.get('/api/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ error: 'Parámetro de búsqueda "q" requerido' });
 
   try {
-    // 1. Verificar si ya existe en la Base de Datos
-    const { data: existingTracks, error } = await supabase
+    const { data: existingTracks } = await supabase
       .from('tracks')
       .select('*')
       .or(`title.ilike.%${q}%,artist.ilike.%${q}%`);
 
-    if (!error && existingTracks && existingTracks.length > 0) {
-      return res.json({ source: 'database', tracks: existingTracks });
+    if (existingTracks && existingTracks.length > 0) {
+      return res.json({ status: 'found', source: 'database', tracks: existingTracks });
     }
 
-    // 2. Si no existe, descargar de inmediato con scraper automatizado
-    console.log(`Canción "${q}" no encontrada en catálogo. Iniciando descarga automática...`);
-    const newTrack = await autoScrapeAndSave(q);
-    return res.json({ source: 'auto-download', tracks: [newTrack] });
+    // Agregar a la cola y responder de inmediato
+    const queueItem = addToQueue(q);
+    return res.json({
+      status: 'queued',
+      message: `"${q}" se agregó a la cola de descargas automáticas.`,
+      queueItem
+    });
 
   } catch (err) {
-    res.status(500).json({ error: `Error procesando la solicitud: ${err.message}` });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Endpoint manual de scraping vía POST
-app.post('/api/scrape', async (req, res) => {
-  const { url, title, artist, lyrics } = req.body;
-  if (!url || !title || !artist) {
-    return res.status(400).json({ error: 'Campos requeridos: url, title, artist' });
-  }
-
-  const trackId = Date.now().toString();
-  const outputPath = path.join(TEMP_DIR, `${trackId}.mp3`);
-
-  try {
-    const command = `yt-dlp -x --audio-format mp3 --audio-quality 0 -o "${outputPath}" "${url}"`;
-    await execPromise(command);
-
-    const appleData = await fetchAppleMusicCover(`${artist} ${title}`);
-    const fetchedLyrics = lyrics && lyrics.length > 0 ? lyrics : await fetchSyncedLyrics(artist, title);
-
-    const fileBuffer = fs.readFileSync(outputPath);
-    const audioStoragePath = `tracks/${trackId}_${artist.replace(/\s+/g, '_')}.mp3`;
-
-    const { error: audioUploadErr } = await supabase.storage
-      .from('audio-files')
-      .upload(audioStoragePath, fileBuffer, { contentType: 'audio/mpeg', upsert: true });
-
-    fs.unlinkSync(outputPath);
-    if (audioUploadErr) throw audioUploadErr;
-
-    const { data: dbData, error: dbErr } = await supabase
-      .from('tracks')
-      .insert([{
-        title,
-        artist,
-        album: appleData.album || 'Single',
-        audio_path: audioStoragePath,
-        cover_url: appleData.coverUrl,
-        lyrics: fetchedLyrics,
-        source_platform: url.includes('soundcloud') ? 'soundcloud' : 'youtube'
-      }])
-      .select()
-      .single();
-
-    if (dbErr) throw dbErr;
-    res.json({ success: true, track: dbData });
-  } catch (error) {
-    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Obtener todas las canciones del catálogo
+// Catálogo
 app.get('/api/tracks', async (req, res) => {
   const { data, error } = await supabase
     .from('tracks')
@@ -243,7 +257,7 @@ app.get('/api/tracks', async (req, res) => {
   res.json(data);
 });
 
-// Stream binario de MP3 (Para consumo offline en apps cliente y reproductor)
+// Stream binario MP3
 app.get('/api/tracks/:id/stream', async (req, res) => {
   try {
     const { id } = req.params;
@@ -275,7 +289,7 @@ app.get('/api/tracks/:id/stream', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// INTERFAZ WEB: DASHBOARD, CATÁLOGO Y REPRODUCTOR INTEGRADO
+// INTERFAZ CON COLA DE DESCARGAS Y REPRODUCTOR
 // ---------------------------------------------------------------------------
 app.get('/', (req, res) => {
   res.send(`
@@ -284,89 +298,90 @@ app.get('/', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Music Server - Catálogo & Reproductor</title>
+      <title>Music Server - Dashboard & Cola de Descargas</title>
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; padding-bottom: 120px; }
-        header { background: #161e2e; padding: 1.5rem 2rem; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
-        h1 { font-size: 1.4rem; color: #38bdf8; display: flex; align-items: center; gap: 0.5rem; }
-        .container { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
-        .search-box { display: flex; gap: 0.75rem; margin-bottom: 2rem; }
-        input[type="text"] { flex: 1; padding: 0.85rem 1.25rem; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #fff; font-size: 1rem; outline: none; }
+        header { background: #161e2e; padding: 1.25rem 2rem; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
+        h1 { font-size: 1.3rem; color: #38bdf8; }
+        .container { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
+        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
+        
+        .search-box { display: flex; gap: 0.75rem; margin-bottom: 1.5rem; }
+        input[type="text"] { flex: 1; padding: 0.85rem; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #fff; font-size: 0.95rem; outline: none; }
         input[type="text"]:focus { border-color: #38bdf8; }
-        button { background: #0284c7; color: white; border: none; padding: 0.85rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        button { background: #0284c7; color: white; border: none; padding: 0.85rem 1.25rem; border-radius: 8px; font-weight: 600; cursor: pointer; }
         button:hover { background: #0369a1; }
-        .status-msg { margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; background: #1e293b; display: none; color: #38bdf8; font-size: 0.9rem; }
         
-        .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1.25rem; }
-        .track-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; overflow: hidden; transition: transform 0.2s, border-color 0.2s; cursor: pointer; }
-        .track-card:hover { transform: translateY(-4px); border-color: #38bdf8; }
-        .cover-img { width: 100%; aspect-ratio: 1; object-fit: cover; background: #0f172a; }
-        .track-info { padding: 0.85rem; }
-        .track-title { font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .track-artist { font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem; }
+        .status-msg { margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; background: #1e293b; display: none; color: #38bdf8; font-size: 0.85rem; }
 
-        /* Reproductor Fijo Inferior */
-        .player-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #161e2e; border-top: 1px solid #1e293b; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; backdrop-filter: blur(10px); }
-        .player-left { display: flex; align-items: center; gap: 1rem; min-width: 240px; }
-        .player-cover { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; background: #0f172a; }
-        .player-meta h4 { font-size: 0.95rem; color: #fff; }
-        .player-meta p { font-size: 0.8rem; color: #94a3b8; }
-        audio { flex: 1; max-width: 500px; height: 40px; }
+        .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; }
+        .track-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; overflow: hidden; cursor: pointer; transition: 0.2s; }
+        .track-card:hover { border-color: #38bdf8; transform: translateY(-2px); }
+        .cover-img { width: 100%; aspect-ratio: 1; object-fit: cover; background: #0f172a; }
+        .track-info { padding: 0.75rem; }
+        .track-title { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .track-artist { font-size: 0.78rem; color: #94a3b8; margin-top: 0.2rem; }
+
+        /* Queue Panel */
+        .queue-panel { background: #161e2e; border: 1px solid #1e293b; border-radius: 12px; padding: 1.25rem; height: fit-content; }
+        .queue-panel h3 { font-size: 1rem; color: #38bdf8; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
+        .queue-item { background: #1e293b; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.75rem; border-left: 4px solid #64748b; font-size: 0.85rem; }
+        .queue-item.pending { border-color: #f59e0b; }
+        .queue-item.downloading { border-color: #3b82f6; animation: pulse 1.5s infinite; }
+        .queue-item.completed { border-color: #10b981; }
+        .queue-item.failed { border-color: #ef4444; }
+        .queue-title { font-weight: 600; color: #f8fafc; }
+        .queue-status { font-size: 0.75rem; color: #94a3b8; margin-top: 0.25rem; }
         
-        /* Modal de Letras Karaoke */
-        .lyrics-box { position: fixed; right: 1rem; bottom: 90px; width: 320px; max-height: 350px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1rem; overflow-y: auto; display: none; }
-        .lyrics-box h3 { font-size: 0.9rem; color: #38bdf8; margin-bottom: 0.5rem; border-bottom: 1px solid #334155; padding-bottom: 0.4rem; }
-        .lyric-line { font-size: 0.85rem; color: #64748b; margin: 0.4rem 0; transition: color 0.2s, font-weight 0.2s; }
-        .lyric-line.active { color: #38bdf8; font-weight: bold; font-size: 0.95rem; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+        /* Player */
+        .player-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #161e2e; border-top: 1px solid #1e293b; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+        .player-left { display: flex; align-items: center; gap: 1rem; }
+        .player-cover { width: 50px; height: 50px; border-radius: 6px; object-fit: cover; background: #0f172a; }
+        audio { flex: 1; max-width: 450px; height: 36px; }
       </style>
     </head>
     <body>
       <header>
-        <h1>🎵 Music Server - Catálogo</h1>
-        <span style="font-size: 0.85rem; color: #34d399;">● Servidor Activo</span>
+        <h1>🎵 Music Scraper & Server</h1>
+        <span style="font-size: 0.85rem; color: #34d399;">● Servidor Activo (Keep-Alive)</span>
       </header>
 
       <div class="container">
-        <div class="search-box">
-          <input type="text" id="searchInput" placeholder="Buscar canción o artista (ej. Laufey - From The Start)..." />
-          <button onclick="handleSearch()">Buscar / Auto-Descargar</button>
+        <div>
+          <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Buscar canción o artista..." />
+            <button onclick="handleSearch()">Buscar / Descargar</button>
+          </div>
+          <div id="statusMsg" class="status-msg"></div>
+
+          <h2 style="margin-bottom: 1rem; font-size: 1.1rem; color: #94a3b8;">Catálogo Disponible</h2>
+          <div id="catalogGrid" class="catalog-grid"></div>
         </div>
 
-        <div id="statusMsg" class="status-msg"></div>
-
-        <h2 style="margin-bottom: 1rem; font-size: 1.2rem; color: #94a3b8;">Catálogo de Canciones</h2>
-        <div id="catalogGrid" class="catalog-grid"></div>
+        <div class="queue-panel">
+          <h3>⚡ Cola de Descargas en Vivo <span id="queueCount" style="font-size: 0.75rem; color: #94a3b8;">(0)</span></h3>
+          <div id="queueList">Cargando cola...</div>
+        </div>
       </div>
 
-      <!-- Letras Karaoke -->
-      <div id="lyricsBox" class="lyrics-box">
-        <h3>🎤 Letras en Tiempo Real</h3>
-        <div id="lyricsContent"></div>
-      </div>
-
-      <!-- Reproductor -->
       <div class="player-bar">
         <div class="player-left">
-          <img id="playerCover" class="player-cover" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>" alt="" />
-          <div class="player-meta">
-            <h4 id="playerTitle">Selecciona una canción</h4>
-            <p id="playerArtist">-</p>
+          <img id="playerCover" class="player-cover" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>" />
+          <div>
+            <h4 id="playerTitle" style="font-size: 0.9rem;">Selecciona una canción</h4>
+            <p id="playerArtist" style="font-size: 0.75rem; color: #94a3b8;">-</p>
           </div>
         </div>
         <audio id="audioPlayer" controls></audio>
       </div>
 
       <script>
-        let currentLyrics = [];
-
         async function loadCatalog() {
           const res = await fetch('/api/tracks');
           const tracks = await res.json();
-          renderCatalog(tracks);
-        }
-
-        function renderCatalog(tracks) {
           const grid = document.getElementById('catalogGrid');
           grid.innerHTML = '';
           tracks.forEach(track => {
@@ -384,27 +399,48 @@ app.get('/', (req, res) => {
           });
         }
 
+        async function loadQueue() {
+          try {
+            const res = await fetch('/api/queue');
+            const items = await res.json();
+            const list = document.getElementById('queueList');
+            document.getElementById('queueCount').innerText = \`(\${items.length})\`;
+            
+            if (items.length === 0) {
+              list.innerHTML = '<p style="font-size:0.8rem; color:#64748b;">No hay descargas activas en este momento.</p>';
+              return;
+            }
+
+            list.innerHTML = '';
+            items.forEach(item => {
+              const div = document.createElement('div');
+              div.className = \`queue-item \${item.status}\`;
+              div.innerHTML = \`
+                <div class="queue-title">\${item.query}</div>
+                <div class="queue-status">\${item.progressMessage}</div>
+              \`;
+              list.appendChild(div);
+            });
+          } catch(e) {}
+        }
+
         async function handleSearch() {
           const query = document.getElementById('searchInput').value.trim();
           if (!query) return;
 
           const status = document.getElementById('statusMsg');
           status.style.display = 'block';
-          status.innerText = '🔍 Buscando en catálogo o iniciando auto-descarga (esto puede tomar unos segundos)...';
+          status.innerText = 'Consultando servidor...';
 
-          try {
-            const res = await fetch(\`/api/search?q=\${encodeURIComponent(query)}\`);
-            const data = await res.json();
+          const res = await fetch(\`/api/search?q=\${encodeURIComponent(query)}\`);
+          const data = await res.json();
 
-            if (data.tracks && data.tracks.length > 0) {
-              status.innerText = data.source === 'auto-download' ? '✅ ¡Canción descargada y agregada al catálogo!' : '✅ Canción encontrada.';
-              loadCatalog();
-              playTrack(data.tracks[0]);
-            } else {
-              status.innerText = '❌ No se pudo encontrar ni descargar la canción.';
-            }
-          } catch (err) {
-            status.innerText = '⚠️ Error en la búsqueda: ' + err.message;
+          if (data.status === 'found') {
+            status.innerText = '✅ Canción encontrada en el catálogo.';
+            playTrack(data.tracks[0]);
+          } else if (data.status === 'queued') {
+            status.innerText = '⏳ Canción agregada a la cola de descargas. Revisa el panel lateral.';
+            loadQueue();
           }
         }
 
@@ -416,56 +452,34 @@ app.get('/', (req, res) => {
           const audio = document.getElementById('audioPlayer');
           audio.src = \`/api/tracks/\${track.id}/stream\`;
           audio.play();
-
-          // Cargar Letras
-          currentLyrics = track.lyrics || [];
-          renderLyrics(currentLyrics);
         }
-
-        function renderLyrics(lyrics) {
-          const box = document.getElementById('lyricsBox');
-          const content = document.getElementById('lyricsContent');
-          content.innerHTML = '';
-
-          if (!lyrics || lyrics.length === 0) {
-            box.style.display = 'none';
-            return;
-          }
-
-          box.style.display = 'block';
-          lyrics.forEach((line, index) => {
-            const div = document.createElement('div');
-            div.className = 'lyric-line';
-            div.id = \`lyric-\${index}\`;
-            div.innerText = line.text;
-            content.appendChild(div);
-          });
-        }
-
-        // Sincronización de Letras con el reproductor
-        document.getElementById('audioPlayer').addEventListener('timeupdate', (e) => {
-          const currentTime = e.target.currentTime;
-          if (!currentLyrics.length) return;
-
-          currentLyrics.forEach((line, index) => {
-            const el = document.getElementById(\`lyric-\${index}\`);
-            if (el) {
-              if (currentTime >= line.time && (!currentLyrics[index + 1] || currentTime < currentLyrics[index + 1].time)) {
-                el.classList.add('active');
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              } else {
-                el.classList.remove('active');
-              }
-            }
-          });
-        });
 
         loadCatalog();
+        loadQueue();
+        setInterval(loadQueue, 3000); // Actualiza la cola cada 3 segundos
+        setInterval(loadCatalog, 10000); // Revisa si hay canciones nuevas cada 10 segundos
       </script>
     </body>
     </html>
   `);
 });
 
+// Inicialización de Semillas (Artistas solicitados)
+async function seedInitialQueue() {
+  for (const song of INITIAL_SEED_ARTISTS) {
+    addToQueue(song);
+  }
+}
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor de música activo en el puerto ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Servidor de música activo en puerto ${PORT}`);
+  
+  // Agregar semillas a la cola
+  setTimeout(seedInitialQueue, 3000);
+
+  // Auto-Ping Keep-Alive para evitar que Render se duerma
+  setInterval(() => {
+    axios.get(`http://localhost:${PORT}/api/ping`).catch(() => {});
+  }, 10 * 60 * 1000);
+});
