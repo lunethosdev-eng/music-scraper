@@ -29,13 +29,29 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+const COOKIES_PATH = path.join(TEMP_DIR, 'cookies.txt');
+
+// ---------------------------------------------------------------------------
+// GESTIÓN DE COOKIES Y RUNTIME DE YOUTUBE
+// ---------------------------------------------------------------------------
+function getCookieFlag() {
+  if (process.env.YOUTUBE_COOKIES) {
+    try {
+      fs.writeFileSync(COOKIES_PATH, process.env.YOUTUBE_COOKIES, 'utf8');
+      return `--cookies "${COOKIES_PATH}"`;
+    } catch (err) {
+      console.error('Error al guardar el archivo de cookies:', err.message);
+    }
+  }
+  return '';
+}
+
 // ---------------------------------------------------------------------------
 // GESTOR DE COLA DE DESCARGAS EN SEGUNDO PLANO
 // ---------------------------------------------------------------------------
 let downloadQueue = [];
 let isProcessingQueue = false;
 
-// Lista inicial de canciones / artistas populares en tendencia (Laufey, Her's, Grupo Frontera, Eve, etc.)
 const INITIAL_SEED_ARTISTS = [
   "Laufey - From The Start",
   "Laufey - Valentine",
@@ -52,7 +68,7 @@ function addToQueue(query) {
   const newItem = {
     id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
     query,
-    status: 'pending', // 'pending', 'downloading', 'completed', 'failed'
+    status: 'pending',
     progressMessage: 'En espera',
     addedAt: new Date()
   };
@@ -87,7 +103,7 @@ async function processQueue() {
 }
 
 // ---------------------------------------------------------------------------
-// AUXILIARES: METADATOS Y YOUTUBE FALLBACK
+// AUXILIARES: METADATOS Y YOUTUBE
 // ---------------------------------------------------------------------------
 async function fetchAppleMusicCover(term) {
   try {
@@ -150,10 +166,11 @@ async function fetchSyncedLyrics(artist, title) {
 async function autoScrapeAndSave(searchQuery) {
   const trackId = Date.now().toString();
   const outputPath = path.join(TEMP_DIR, `${trackId}.mp3`);
+  const cookieFlag = getCookieFlag();
 
   try {
-    // Descarga robusta con yt-dlp obteniendo título e imagen original de respaldo
-    const downloadCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" --no-playlist --no-check-certificates -x --audio-format mp3 --audio-quality 0 -o "${outputPath}" --print "%(title)s" --print "%(thumbnail)s"`;
+    // Se agregan banderas --js-runtimes node y cookies si existen
+    const downloadCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" ${cookieFlag} --js-runtimes node --no-playlist --no-check-certificates -x --audio-format mp3 --audio-quality 0 -o "${outputPath}" --print "%(title)s" --print "%(thumbnail)s"`;
     const { stdout } = await execPromise(downloadCmd);
 
     const lines = stdout.trim().split('\n');
@@ -164,7 +181,6 @@ async function autoScrapeAndSave(searchQuery) {
       throw new Error('yt-dlp no pudo generar el archivo MP3');
     }
 
-    // Intentar obtener portadas HD de Apple Music
     const appleData = await fetchAppleMusicCover(searchQuery);
     const finalTitle = appleData.title || ytTitle.split('-')[1]?.trim() || ytTitle;
     const finalArtist = appleData.artist || ytTitle.split('-')[0]?.trim() || 'Artista';
@@ -172,7 +188,6 @@ async function autoScrapeAndSave(searchQuery) {
 
     const lyrics = await fetchSyncedLyrics(finalArtist, finalTitle);
 
-    // Subida a Supabase Storage
     const fileBuffer = fs.readFileSync(outputPath);
     const audioStoragePath = `tracks/${trackId}_${finalArtist.replace(/[^a-zA-Z0-9]/g, '_')}.mp3`;
 
@@ -183,7 +198,6 @@ async function autoScrapeAndSave(searchQuery) {
     if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     if (uploadErr) throw uploadErr;
 
-    // Registro en Base de Datos
     const { data: dbTrack, error: dbErr } = await supabase
       .from('tracks')
       .insert([{
@@ -207,18 +221,15 @@ async function autoScrapeAndSave(searchQuery) {
 }
 
 // ---------------------------------------------------------------------------
-// ENDPOINTS
+// ENDPOINTS DE LA API
 // ---------------------------------------------------------------------------
 
-// Ping endpoint para mantener despierto Render
 app.get('/api/ping', (req, res) => res.send('PONG'));
 
-// Obtener estado de la cola de descargas
 app.get('/api/queue', (req, res) => {
-  res.json(downloadQueue.slice(-15).reverse()); // Retorna las últimas 15 tareas
+  res.json(downloadQueue.slice(-15).reverse());
 });
 
-// Búsqueda inteligente: si existe en BD la retorna, sino la envía a la cola
 app.get('/api/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ error: 'Parámetro de búsqueda "q" requerido' });
@@ -233,7 +244,6 @@ app.get('/api/search', async (req, res) => {
       return res.json({ status: 'found', source: 'database', tracks: existingTracks });
     }
 
-    // Agregar a la cola y responder de inmediato
     const queueItem = addToQueue(q);
     return res.json({
       status: 'queued',
@@ -246,7 +256,6 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-// Catálogo
 app.get('/api/tracks', async (req, res) => {
   const { data, error } = await supabase
     .from('tracks')
@@ -257,7 +266,6 @@ app.get('/api/tracks', async (req, res) => {
   res.json(data);
 });
 
-// Stream binario MP3
 app.get('/api/tracks/:id/stream', async (req, res) => {
   try {
     const { id } = req.params;
@@ -289,7 +297,7 @@ app.get('/api/tracks/:id/stream', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// INTERFAZ CON COLA DE DESCARGAS Y REPRODUCTOR
+// INTERFAZ DASHBOARD & REPRODUCTOR
 // ---------------------------------------------------------------------------
 app.get('/', (req, res) => {
   res.send(`
@@ -323,7 +331,6 @@ app.get('/', (req, res) => {
         .track-title { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .track-artist { font-size: 0.78rem; color: #94a3b8; margin-top: 0.2rem; }
 
-        /* Queue Panel */
         .queue-panel { background: #161e2e; border: 1px solid #1e293b; border-radius: 12px; padding: 1.25rem; height: fit-content; }
         .queue-panel h3 { font-size: 1rem; color: #38bdf8; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
         .queue-item { background: #1e293b; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.75rem; border-left: 4px solid #64748b; font-size: 0.85rem; }
@@ -336,7 +343,6 @@ app.get('/', (req, res) => {
         
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 
-        /* Player */
         .player-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #161e2e; border-top: 1px solid #1e293b; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
         .player-left { display: flex; align-items: center; gap: 1rem; }
         .player-cover { width: 50px; height: 50px; border-radius: 6px; object-fit: cover; background: #0f172a; }
@@ -346,7 +352,7 @@ app.get('/', (req, res) => {
     <body>
       <header>
         <h1>🎵 Music Scraper & Server</h1>
-        <span style="font-size: 0.85rem; color: #34d399;">● Servidor Activo (Keep-Alive)</span>
+        <span style="font-size: 0.85rem; color: #34d399;">● Servidor Activo</span>
       </header>
 
       <div class="container">
@@ -456,15 +462,14 @@ app.get('/', (req, res) => {
 
         loadCatalog();
         loadQueue();
-        setInterval(loadQueue, 3000); // Actualiza la cola cada 3 segundos
-        setInterval(loadCatalog, 10000); // Revisa si hay canciones nuevas cada 10 segundos
+        setInterval(loadQueue, 3000);
+        setInterval(loadCatalog, 10000);
       </script>
     </body>
     </html>
   `);
 });
 
-// Inicialización de Semillas (Artistas solicitados)
 async function seedInitialQueue() {
   for (const song of INITIAL_SEED_ARTISTS) {
     addToQueue(song);
@@ -474,11 +479,8 @@ async function seedInitialQueue() {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor de música activo en puerto ${PORT}`);
-  
-  // Agregar semillas a la cola
   setTimeout(seedInitialQueue, 3000);
 
-  // Auto-Ping Keep-Alive para evitar que Render se duerma
   setInterval(() => {
     axios.get(`http://localhost:${PORT}/api/ping`).catch(() => {});
   }, 10 * 60 * 1000);
