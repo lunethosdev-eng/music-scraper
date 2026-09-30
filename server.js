@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const ws = require('ws');
-const { exec } = require('child_process');
+const { spawn, exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
@@ -52,10 +52,11 @@ async function ensureBucketExists() {
 }
 
 // ---------------------------------------------------------------------------
-// COLA DE DESCARGAS CON SISTEMA DE REINTENTOS
+// COLA DE DESCARGAS Y EMISIÓN SSE (PROGRESS REAL-TIME)
 // ---------------------------------------------------------------------------
 let downloadQueue = [];
 let isProcessingQueue = false;
+let sseClients = [];
 const MAX_RETRIES = 3;
 
 const INITIAL_SEED_ARTISTS = [
@@ -67,6 +68,11 @@ const INITIAL_SEED_ARTISTS = [
   "Coqueta - Grupo Frontera"
 ];
 
+function notifySSEClients() {
+  const data = JSON.stringify(downloadQueue.slice(-15).reverse());
+  sseClients.forEach(client => client.res.write(`data: ${data}\n\n`));
+}
+
 function addToQueue(query) {
   const existing = downloadQueue.find(item => item.query.toLowerCase() === query.toLowerCase());
   if (existing) return existing;
@@ -75,11 +81,13 @@ function addToQueue(query) {
     id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
     query,
     status: 'pending',
+    progress: 0,
     retryCount: 0,
-    progressMessage: 'En espera',
+    progressMessage: 'En espera...',
     addedAt: new Date()
   };
   downloadQueue.push(newItem);
+  notifySSEClients();
   processQueue();
   return newItem;
 }
@@ -93,25 +101,30 @@ async function processQueue() {
     if (!item) break;
 
     item.status = 'downloading';
+    item.progress = 0;
     item.progressMessage = item.retryCount > 0 
       ? `Reintentando (${item.retryCount}/${MAX_RETRIES})...` 
-      : 'Descargando audio y metadatos...';
+      : 'Iniciando descarga...';
+    notifySSEClients();
 
     try {
-      await autoScrapeAndSave(item.query);
+      await autoScrapeAndSave(item);
       item.status = 'completed';
-      item.progressMessage = '¡Completado con éxito!';
+      item.progress = 100;
+      item.progressMessage = '¡Descarga y procesamiento completados!';
+      notifySSEClients();
     } catch (err) {
       console.error(`Error procesando "${item.query}":`, err.message);
       item.retryCount += 1;
       
       if (item.retryCount < MAX_RETRIES) {
         item.status = 'pending';
-        item.progressMessage = `Error. Fallo #${item.retryCount}, reintentando en breve...`;
+        item.progressMessage = `Error. Reintento #${item.retryCount} programado...`;
       } else {
         item.status = 'failed';
-        item.progressMessage = `Fallo definitivo tras ${MAX_RETRIES} intentos: ${err.message}`;
+        item.progressMessage = `Fallo: ${err.message.slice(0, 100)}...`;
       }
+      notifySSEClients();
     }
   }
 
@@ -188,86 +201,133 @@ async function fetchSyncedLyrics(artist, title) {
 }
 
 // ---------------------------------------------------------------------------
-// DESCARGA CON YT-DLP
+// DESCARGA ROBUSTA CON YT-DLP Y SEGUIMIENTO DE PORCENTAJE REAL
 // ---------------------------------------------------------------------------
-async function autoScrapeAndSave(searchQuery) {
-  const trackId = Date.now().toString();
-  const outputPath = path.join(TEMP_DIR, `${trackId}.mp3`);
-  const userAgent = '"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"';
-  
-  const clientArgs = '--extractor-args "youtube:player_client=android,mweb"';
+function autoScrapeAndSave(queueItem) {
+  return new Promise(async (resolve, reject) => {
+    const searchQuery = queueItem.query;
+    const trackId = Date.now().toString();
+    const outputPath = path.join(TEMP_DIR, `${trackId}.mp3`);
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
-  try {
     let ytTitle = searchQuery;
     let ytThumbnail = null;
 
     try {
-      const metaCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" ${clientArgs} --user-agent ${userAgent} --dump-json --no-playlist --no-check-certificates`;
+      const metaCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" --extractor-args "youtube:player_client=ios,web" --user-agent "${userAgent}" --dump-json --no-playlist --no-check-certificates`;
       const { stdout: metaJson } = await execPromise(metaCmd);
       const parsedMeta = JSON.parse(metaJson);
       ytTitle = parsedMeta.title || searchQuery;
       ytThumbnail = parsedMeta.thumbnail || null;
     } catch (metaErr) {
-      console.warn('Obtención de metadatos de YouTube omitida:', metaErr.message);
+      console.warn('Metadatos iniciales omitidos:', metaErr.message);
     }
 
-    const downloadCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" ${clientArgs} --user-agent ${userAgent} --js-runtimes node --no-playlist --no-check-certificates -x --audio-format mp3 --audio-quality 0 -o "${outputPath}"`;
-    await execPromise(downloadCmd);
+    // Argumentos optimizados para evitar HTTP 403 Forbidden
+    const args = [
+      `ytsearch1:${searchQuery}`,
+      '--extractor-args', 'youtube:player_client=ios,web',
+      '--user-agent', userAgent,
+      '--no-playlist',
+      '--no-check-certificates',
+      '-x',
+      '--audio-format', 'mp3',
+      '--audio-quality', '0',
+      '-o', outputPath
+    ];
 
-    if (!fs.existsSync(outputPath)) {
-      throw new Error('yt-dlp no pudo generar el archivo MP3');
-    }
+    const ytdlpProcess = spawn('yt-dlp', args);
 
-    const appleData = await fetchAppleMusicData(searchQuery);
-    const finalTitle = appleData.title || ytTitle.split('-')[1]?.trim() || ytTitle;
-    const finalArtist = appleData.artist || ytTitle.split('-')[0]?.trim() || 'Artista';
-    const finalCover = appleData.coverUrl || ytThumbnail;
-    const finalAnimatedCover = appleData.animatedCoverUrl || null;
+    ytdlpProcess.stdout.on('data', (data) => {
+      const str = data.toString();
+      const match = str.match(/\[download\]\s+(\d+\.\d+)%/);
+      if (match) {
+        const pct = parseFloat(match[1]);
+        queueItem.progress = pct;
+        queueItem.progressMessage = `Descargando audio: ${pct.toFixed(1)}%`;
+        notifySSEClients();
+      }
+    });
 
-    const lyrics = await fetchSyncedLyrics(finalArtist, finalTitle);
+    ytdlpProcess.stderr.on('data', (data) => {
+      console.log(`yt-dlp log: ${data.toString()}`);
+    });
 
-    const fileBuffer = fs.readFileSync(outputPath);
-    const audioStoragePath = `tracks/${trackId}_${finalArtist.replace(/[^a-zA-Z0-9]/g, '_')}.mp3`;
+    ytdlpProcess.on('close', async (code) => {
+      if (code !== 0 || !fs.existsSync(outputPath)) {
+        return reject(new Error(`yt-dlp finalizó con código de error ${code}`));
+      }
 
-    // Subida a Supabase Storage
-    const { error: uploadErr } = await supabase.storage
-      .from('audio-files')
-      .upload(audioStoragePath, fileBuffer, { contentType: 'audio/mpeg', upsert: true });
+      try {
+        queueItem.progressMessage = 'Procesando portadas y letras...';
+        notifySSEClients();
 
-    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-    if (uploadErr) throw uploadErr;
+        const appleData = await fetchAppleMusicData(searchQuery);
+        const finalTitle = appleData.title || ytTitle.split('-')[1]?.trim() || ytTitle;
+        const finalArtist = appleData.artist || ytTitle.split('-')[0]?.trim() || 'Artista';
+        const finalCover = appleData.coverUrl || ytThumbnail;
+        const finalAnimatedCover = appleData.animatedCoverUrl || null;
 
-    // Guardado en BD Supabase
-    const { data: dbTrack, error: dbErr } = await supabase
-      .from('tracks')
-      .insert([{
-        title: finalTitle,
-        artist: finalArtist,
-        album: appleData.album || 'Single',
-        audio_path: audioStoragePath,
-        cover_url: finalCover,
-        animated_cover_url: finalAnimatedCover,
-        lyrics: lyrics,
-        source_platform: 'auto-scraped'
-      }])
-      .select()
-      .single();
+        const lyrics = await fetchSyncedLyrics(finalArtist, finalTitle);
 
-    if (dbErr) throw dbErr;
-    return dbTrack;
-  } catch (error) {
-    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-    throw error;
-  }
+        const fileBuffer = fs.readFileSync(outputPath);
+        const audioStoragePath = `tracks/${trackId}_${finalArtist.replace(/[^a-zA-Z0-9]/g, '_')}.mp3`;
+
+        const { error: uploadErr } = await supabase.storage
+          .from('audio-files')
+          .upload(audioStoragePath, fileBuffer, { contentType: 'audio/mpeg', upsert: true });
+
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        if (uploadErr) throw uploadErr;
+
+        const { data: dbTrack, error: dbErr } = await supabase
+          .from('tracks')
+          .insert([{
+            title: finalTitle,
+            artist: finalArtist,
+            album: appleData.album || 'Single',
+            audio_path: audioStoragePath,
+            cover_url: finalCover,
+            animated_cover_url: finalAnimatedCover,
+            lyrics: lyrics,
+            source_platform: 'auto-scraped'
+          }])
+          .select()
+          .single();
+
+        if (dbErr) throw dbErr;
+        resolve(dbTrack);
+      } catch (err) {
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        reject(err);
+      }
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
-// ENDPOINTS API
+// ENDPOINTS API & SSE
 // ---------------------------------------------------------------------------
 app.get('/api/ping', (req, res) => res.send('PONG'));
 
 app.get('/api/queue', (req, res) => {
   res.json(downloadQueue.slice(-15).reverse());
+});
+
+app.get('/api/queue/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  
+  const clientId = Date.now();
+  const newClient = { id: clientId, res };
+  sseClients.push(newClient);
+
+  res.write(`data: ${JSON.stringify(downloadQueue.slice(-15).reverse())}\n\n`);
+
+  req.on('close', () => {
+    sseClients = sseClients.filter(c => c.id !== clientId);
+  });
 });
 
 app.get('/api/search', async (req, res) => {
@@ -343,7 +403,7 @@ app.get('/api/tracks/:id/stream', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// DASHBOARD WEB & DOCUMENTACIÓN
+// DASHBOARD WEB & DOCUMENTACIÓN (APPLE DESIGN LANGUAGE)
 // ---------------------------------------------------------------------------
 app.get('/', (req, res) => {
   res.send(`
@@ -352,160 +412,209 @@ app.get('/', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Music Server & API</title>
+      <title>Music Server</title>
       <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; padding-bottom: 120px; }
-        header { background: #161e2e; padding: 1.25rem 2rem; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
-        h1 { font-size: 1.3rem; color: #38bdf8; }
-        nav { display: flex; gap: 1rem; }
-        nav button { background: transparent; border: 1px solid #334155; color: #94a3b8; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 500; }
-        nav button.active { background: #0284c7; color: white; border-color: #0284c7; }
-        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+        :root {
+          --bg-primary: #000000;
+          --bg-surface: #1c1c1e;
+          --bg-glass: rgba(28, 28, 30, 0.75);
+          --accent: #fa2d48;
+          --text-main: #ffffff;
+          --text-sub: #8e8e93;
+          --border: rgba(255, 255, 255, 0.1);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif; background: var(--bg-primary); color: var(--text-main); padding-bottom: 120px; }
+        
+        header { position: sticky; top: 0; z-index: 50; background: var(--bg-glass); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+        .logo-group { display: flex; align-items: center; gap: 0.75rem; }
+        .logo-group svg { fill: var(--accent); width: 24px; height: 24px; }
+        h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
+        
+        nav { display: flex; gap: 0.5rem; background: rgba(120, 120, 128, 0.12); padding: 3px; border-radius: 9px; }
+        nav button { background: transparent; border: none; color: var(--text-sub); padding: 0.4rem 1rem; border-radius: 7px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s ease; }
+        nav button.active { background: #636366; color: #fff; }
+
+        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1.5rem; }
         .grid-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
-        @media (max-width: 768px) { .grid-layout { grid-template-columns: 1fr; } }
-        .search-box { display: flex; gap: 0.75rem; margin-bottom: 1.5rem; }
-        input[type="text"] { flex: 1; padding: 0.85rem; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #fff; font-size: 0.95rem; outline: none; }
-        .btn-main { background: #0284c7; color: white; border: none; padding: 0.85rem 1.25rem; border-radius: 8px; font-weight: 600; cursor: pointer; }
-        .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; }
-        .track-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; overflow: hidden; cursor: pointer; transition: transform 0.2s; }
-        .track-card:hover { transform: translateY(-3px); }
-        .cover-container { position: relative; width: 100%; aspect-ratio: 1; background: #0f172a; overflow: hidden; }
+        @media (max-width: 850px) { .grid-layout { grid-template-columns: 1fr; } }
+
+        .search-box { display: flex; gap: 0.75rem; margin-bottom: 2rem; position: relative; }
+        .search-box input { flex: 1; padding: 0.85rem 1rem 0.85rem 2.8rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; color: #fff; font-size: 0.95rem; outline: none; transition: border-color 0.2s; }
+        .search-box input:focus { border-color: var(--accent); }
+        .search-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); fill: var(--text-sub); width: 18px; height: 18px; }
+        
+        .btn-apple { background: var(--accent); color: white; border: none; padding: 0.85rem 1.5rem; border-radius: 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s; }
+        .btn-apple:hover { opacity: 0.9; }
+
+        .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 1.25rem; }
+        .track-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; cursor: pointer; transition: transform 0.25s ease, box-shadow 0.25s ease; }
+        .track-card:hover { transform: scale(1.02); box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .cover-container { position: relative; width: 100%; aspect-ratio: 1; background: #2c2c2e; overflow: hidden; }
         .cover-img, .cover-video { width: 100%; height: 100%; object-fit: cover; }
-        .track-info { padding: 0.75rem; }
-        .queue-panel { background: #161e2e; border: 1px solid #1e293b; border-radius: 12px; padding: 1.25rem; }
-        .queue-item { background: #1e293b; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.75rem; border-left: 4px solid #64748b; font-size: 0.85rem; }
-        .queue-item.pending { border-color: #f59e0b; }
-        .queue-item.downloading { border-color: #3b82f6; animation: pulse 1.5s infinite; }
-        .queue-item.completed { border-color: #10b981; }
-        .queue-item.failed { border-color: #ef4444; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-        
-        /* Player & Lyrics Bar */
-        .player-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #161e2e; border-top: 1px solid #1e293b; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-        .player-left { display: flex; align-items: center; gap: 1rem; width: 260px; }
-        .player-cover { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; background: #0f172a; }
-        audio { flex: 1; max-width: 450px; height: 36px; }
-        .btn-lyrics { background: #334155; color: #f1f5f9; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
-        
-        /* Modal de Letras */
-        .lyrics-panel { display: none; position: fixed; right: 2rem; bottom: 90px; width: 340px; max-height: 400px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1rem; overflow-y: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 100; }
+        .track-info { padding: 0.85rem; }
+        .track-title { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.2rem; }
+        .track-artist { font-size: 0.8rem; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* Panel de Cola */
+        .queue-panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.25rem; height: fit-content; }
+        .queue-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+        .queue-item { background: rgba(255,255,255,0.04); padding: 0.85rem; border-radius: 10px; margin-bottom: 0.75rem; border: 1px solid var(--border); font-size: 0.85rem; }
+        .progress-bar-bg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 0.6rem; overflow: hidden; }
+        .progress-bar-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s ease; }
+
+        /* Reproductor Estilo iOS */
+        .player-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg-glass); backdrop-filter: blur(25px); border-top: 1px solid var(--border); padding: 0.85rem 2rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; z-index: 100; }
+        .player-left { display: flex; align-items: center; gap: 1rem; min-width: 240px; }
+        .player-cover-box { width: 48px; height: 48px; border-radius: 8px; overflow: hidden; background: #2c2c2e; flex-shrink: 0; }
+        .player-cover-box img, .player-cover-box video { width: 100%; height: 100%; object-fit: cover; }
+        audio { flex: 1; max-width: 500px; height: 36px; }
+        .btn-icon { background: rgba(255,255,255,0.08); border: none; padding: 0.6rem; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+        .btn-icon:hover { background: rgba(255,255,255,0.15); }
+        .btn-icon svg { fill: #fff; width: 18px; height: 18px; }
+
+        /* Panel de Letras Sincronizadas */
+        .lyrics-panel { display: none; position: fixed; right: 2rem; bottom: 85px; width: 360px; max-height: 420px; background: var(--bg-glass); backdrop-filter: blur(30px); border: 1px solid var(--border); border-radius: 18px; padding: 1.25rem; overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.6); z-index: 99; }
         .lyrics-panel.active { display: block; }
-        .lyrics-line { font-size: 0.9rem; margin-bottom: 0.5rem; color: #94a3b8; }
-        
-        /* Documentación */
-        .doc-section { background: #161e2e; border: 1px solid #1e293b; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
-        .doc-section h3 { color: #38bdf8; margin-bottom: 0.75rem; font-size: 1.1rem; }
-        pre { background: #0f172a; padding: 1rem; border-radius: 8px; color: #34d399; font-size: 0.85rem; overflow-x: auto; border: 1px solid #1e293b; margin-top: 0.5rem; }
+        .lyrics-line { font-size: 0.95rem; line-height: 1.5; margin-bottom: 0.75rem; color: var(--text-sub); transition: color 0.2s; }
+        .lyrics-line.active { color: #fff; font-weight: 600; }
+
+        /* Seccion Docs */
+        .doc-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .doc-card h3 { color: var(--accent); margin-bottom: 0.5rem; font-size: 1.1rem; font-weight: 600; }
+        pre { background: #000; padding: 1.2rem; border-radius: 10px; color: #34d399; font-family: "SF Mono", Menlo, monospace; font-size: 0.85rem; overflow-x: auto; border: 1px solid var(--border); margin-top: 0.75rem; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
       </style>
     </head>
     <body>
       <header>
-        <div>
-          <h1>🎵 Music Scraper & API</h1>
+        <div class="logo-group">
+          <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+          <h1>Apple Music Core</h1>
         </div>
         <nav>
           <button id="btnTabDashboard" class="active" onclick="switchTab('dashboard')">Catálogo</button>
-          <button id="btnTabDocs" onclick="switchTab('docs')">📖 Documentación API</button>
+          <button id="btnTabDocs" onclick="switchTab('docs')">Documentación API</button>
         </nav>
       </header>
 
       <div class="container">
-        <!-- VISTA CATÁLOGO Y COLA -->
+        <!-- VISTA CATÁLOGO -->
         <div id="tabDashboard" class="tab-content active">
           <div class="grid-layout">
             <div>
               <div class="search-box">
+                <svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
                 <input type="text" id="searchInput" placeholder="Buscar canción o artista..." />
-                <button class="btn-main" onclick="handleSearch()">Buscar / Descargar</button>
+                <button class="btn-apple" onclick="handleSearch()">Buscar / Descargar</button>
               </div>
-              <h2 style="margin-bottom: 1rem; font-size: 1.1rem; color: #94a3b8;">Canciones Guardadas en Supabase</h2>
-              <div id="catalogGrid" class="catalog-grid">Cargando catálogo...</div>
+              <h2 style="margin-bottom: 1.25rem; font-size: 1.1rem; font-weight: 600; color: var(--text-sub);">Biblioteca Almacenada</h2>
+              <div id="catalogGrid" class="catalog-grid">Cargando biblioteca...</div>
             </div>
+            
             <div class="queue-panel">
-              <h3 style="margin-bottom: 1rem;">⚡ Cola de Descargas <span id="queueCount">(0)</span></h3>
-              <div id="queueList">Cargando...</div>
+              <div class="queue-header">
+                <h3 style="font-size: 1rem; font-weight: 600;">Estado de Descargas</h3>
+                <span id="queueCount" style="font-size: 0.8rem; color: var(--text-sub);">(0)</span>
+              </div>
+              <div id="queueList">Sin descargas.</div>
             </div>
           </div>
         </div>
 
-        <!-- VISTA DOCUMENTACIÓN SEPARADA -->
+        <!-- VISTA DOCUMENTACIÓN -->
         <div id="tabDocs" class="tab-content">
-          <div class="doc-section">
-            <h3>1. Ejemplos de Petición (Fetch API en JavaScript / Node.js)</h3>
-            <p style="font-size: 0.9rem; color: #94a3b8;">Obtén el catálogo de pistas almacenadas directamente desde Supabase:</p>
-            <pre>fetch('https://tu-servidor.onrender.com/api/tracks')
-  .then(res => res.json())
-  .then(tracks => {
-    tracks.forEach(track => {
-      console.log('Título:', track.title);
-      console.log('Streaming URL MP3:', track.audio_stream_url);
-      console.log('Cover Animado:', track.animated_cover_url);
-      console.log('Letras sincronizadas:', track.lyrics);
-    });
-  });</pre>
-          </div>
+          <div class="doc-card">
+            <h3>1. Descargar y Guardar MP3 en IndexedDB (Client-side Offline)</h3>
+            <p style="font-size: 0.9rem; color: var(--text-sub);">Guarda directamente el archivo MP3 binario dentro del almacenamiento IndexedDB del navegador del usuario sin requerir API keys adicionales en reproducciones posteriores:</p>
+            <pre>// Utilizando IndexedDB estándar del navegador
+function initDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('MusicCacheDB', 1);
+    request.onupgradeneeded = (e) => {
+      e.target.result.createObjectStore('tracks', { keyPath: 'id' });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
 
-          <div class="doc-section">
-            <h3>2. Almacenamiento Local en Android TV (Kotlin)</h3>
-            <pre>suspend fun cacheMp3(context: Context, trackId: String, streamUrl: String): File = withContext(Dispatchers.IO) {
-    val file = File(context.filesDir, "track_$trackId.mp3")
-    if (!file.exists()) {
-        URL(streamUrl).openStream().use { input ->
-            FileOutputStream(file).use { output -> input.copyTo(output) }
-        }
+async function saveTrackOffline(track) {
+  const db = await initDB();
+  const response = await fetch(track.audio_stream_url);
+  const blob = await response.blob();
+  
+  const tx = db.transaction('tracks', 'readwrite');
+  tx.objectStore('tracks').put({
+    id: track.id,
+    title: track.title,
+    artist: track.artist,
+    cover: track.cover_url,
+    blob: blob
+  });
+  console.log('Canción guardada localmente en IndexedDB');
+}
+
+async function playOfflineTrack(trackId) {
+  const db = await initDB();
+  const tx = db.transaction('tracks', 'readonly');
+  const req = tx.objectStore('tracks').get(trackId);
+  req.onsuccess = () => {
+    const record = req.result;
+    if (record) {
+      const audioUrl = URL.createObjectURL(record.blob);
+      const audio = new Audio(audioUrl);
+      audio.play();
     }
-    return@withContext file
+  };
 }</pre>
           </div>
 
-          <div class="doc-section">
-            <h3>3. Descarga y Reproducción en Roku TV (BrightScript)</h3>
-            <pre>sub DownloadAndPlayAudio(trackId as String, streamUrl as String)
-    localPath = "tmp:/" + trackId + ".mp3"
-    if not createObject("roFileSystem").Exists(localPath)
-        transfer = createObject("roUrlTransfer")
-        transfer.SetUrl(streamUrl)
-        transfer.writeToFile(localPath)
-    end if
-
-    audioContent = createObject("roSGNode", "ContentNode")
-    audioContent.url = localPath
-    audioContent.streamformat = "mp3"
-
-    m.audioPlayer = createObject("roSGNode", "Audio")
-    m.audioPlayer.content = audioContent
-    m.audioPlayer.control = "play"
-end sub</pre>
+          <div class="doc-card">
+            <h3>2. Estructura de Respuesta del Catálogo (`GET /api/tracks`)</h3>
+            <pre>[
+  {
+    "id": "1727710000000",
+    "title": "From The Start",
+    "artist": "Laufey",
+    "album": "Bewitched",
+    "audio_stream_url": "https://servidor.com/api/tracks/1727710000000/stream",
+    "cover_url": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/1000x1000bb.jpg",
+    "animated_cover_url": "https://audio-ssl.itunes.apple.com/m4v/preview.m4v",
+    "lyrics": [
+      { "time": 12.4, "text": "Don't look at me like that" }
+    ]
+  }
+]</pre>
           </div>
         </div>
       </div>
 
       <!-- PANEL DE LETRAS -->
       <div id="lyricsPanel" class="lyrics-panel">
-        <h4 style="margin-bottom: 0.75rem; color: #38bdf8;">Letras</h4>
-        <div id="lyricsContainer">No hay letras disponibles para esta canción.</div>
+        <h4 style="margin-bottom: 1rem; font-size: 1rem; font-weight: 600;">Letras de la canción</h4>
+        <div id="lyricsContainer">No hay letras disponibles.</div>
       </div>
 
       <!-- REPRODUCTOR -->
       <div class="player-bar">
         <div class="player-left">
-          <div id="playerCoverWrapper" style="width:52px; height:52px;">
-            <img id="playerCover" class="player-cover" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>" />
-          </div>
+          <div id="playerCoverBox" class="player-cover-box"></div>
           <div>
-            <h4 id="playerTitle" style="font-size: 0.9rem;">Selecciona una canción</h4>
-            <p id="playerArtist" style="font-size: 0.75rem; color: #94a3b8;">-</p>
+            <div id="playerTitle" style="font-weight: 600; font-size: 0.9rem;">Sin reproducción</div>
+            <div id="playerArtist" style="font-size: 0.78rem; color: var(--text-sub);">-</div>
           </div>
         </div>
         <audio id="audioPlayer" controls></audio>
-        <button class="btn-lyrics" onclick="toggleLyrics()">📜 Letras</button>
+        <button class="btn-icon" onclick="toggleLyrics()" title="Letras">
+          <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+        </button>
       </div>
 
       <script>
-        let currentTrackLyrics = [];
+        let currentLyrics = [];
 
         function switchTab(tabName) {
           document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -527,7 +636,7 @@ end sub</pre>
           grid.innerHTML = '';
           
           if (tracks.length === 0) {
-            grid.innerHTML = '<p style="color:#94a3b8;">No hay canciones descargadas aún.</p>';
+            grid.innerHTML = '<p style="color:var(--text-sub);">No hay pistas en el catálogo.</p>';
             return;
           }
 
@@ -536,35 +645,47 @@ end sub</pre>
             card.className = 'track-card';
             card.onclick = () => playTrack(track);
 
-            const hasAnimated = track.animated_cover_url;
-            const coverMedia = hasAnimated
+            const coverElement = track.animated_cover_url
               ? '<video class="cover-video" src="' + track.animated_cover_url + '" autoplay loop muted poster="' + (track.cover_url || '') + '"></video>'
               : '<img class="cover-img" src="' + (track.cover_url || 'https://via.placeholder.com/300') + '" />';
 
             card.innerHTML = 
-              '<div class="cover-container">' + coverMedia + '</div>' +
+              '<div class="cover-container">' + coverElement + '</div>' +
               '<div class="track-info">' +
-                '<div style="font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">' + track.title + '</div>' +
-                '<div style="font-size: 0.78rem; color: #94a3b8;">' + track.artist + '</div>' +
+                '<div class="track-title">' + track.title + '</div>' +
+                '<div class="track-artist">' + track.artist + '</div>' +
               '</div>';
             grid.appendChild(card);
           });
         }
 
-        async function loadQueue() {
-          const res = await fetch('/api/queue');
-          const items = await res.json();
+        function renderQueue(items) {
           const list = document.getElementById('queueList');
           document.getElementById('queueCount').innerText = '(' + items.length + ')';
-          if (items.length === 0) { list.innerHTML = '<p style="font-size:0.8rem;">Sin descargas activas.</p>'; return; }
+          if (items.length === 0) {
+            list.innerHTML = '<p style="font-size:0.85rem; color:var(--text-sub);">No hay tareas pendientes.</p>';
+            return;
+          }
           list.innerHTML = '';
           items.forEach(item => {
             const div = document.createElement('div');
-            div.className = 'queue-item ' + item.status;
-            div.innerHTML = '<div style="font-weight:600;">' + item.query + '</div><div style="font-size:0.75rem; color:#94a3b8;">' + item.progressMessage + '</div>';
+            div.className = 'queue-item';
+            
+            const progress = item.progress || 0;
+            div.innerHTML = 
+              '<div style="font-weight:600;">' + item.query + '</div>' +
+              '<div style="font-size:0.75rem; color:var(--text-sub); margin-top: 0.2rem;">' + item.progressMessage + '</div>' +
+              '<div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + progress + '%"></div></div>';
             list.appendChild(div);
           });
         }
+
+        // Conexión SSE para actualización de porcentaje en tiempo real
+        const evtSource = new EventSource('/api/queue/stream');
+        evtSource.onmessage = function(e) {
+          const queueItems = JSON.parse(e.data);
+          renderQueue(queueItems);
+        };
 
         async function handleSearch() {
           const query = document.getElementById('searchInput').value.trim();
@@ -572,15 +693,14 @@ end sub</pre>
           const res = await fetch('/api/search?q=' + encodeURIComponent(query));
           const data = await res.json();
           if (data.status === 'found') playTrack(data.tracks[0]);
-          loadQueue();
         }
 
         function playTrack(track) {
-          const wrapper = document.getElementById('playerCoverWrapper');
+          const box = document.getElementById('playerCoverBox');
           if (track.animated_cover_url) {
-            wrapper.innerHTML = '<video class="player-cover" src="' + track.animated_cover_url + '" autoplay loop muted poster="' + (track.cover_url || '') + '"></video>';
+            box.innerHTML = '<video src="' + track.animated_cover_url + '" autoplay loop muted poster="' + (track.cover_url || '') + '"></video>';
           } else {
-            wrapper.innerHTML = '<img class="player-cover" src="' + (track.cover_url || '') + '" />';
+            box.innerHTML = '<img src="' + (track.cover_url || '') + '" />';
           }
 
           document.getElementById('playerTitle').innerText = track.title;
@@ -590,18 +710,17 @@ end sub</pre>
           audio.src = track.audio_stream_url || ('/api/tracks/' + track.id + '/stream');
           audio.play();
 
-          // Cargar letras
-          currentTrackLyrics = track.lyrics || [];
+          currentLyrics = track.lyrics || [];
           renderLyrics();
         }
 
         function renderLyrics() {
           const container = document.getElementById('lyricsContainer');
-          if (!currentTrackLyrics || currentTrackLyrics.length === 0) {
-            container.innerHTML = '<p style="font-size: 0.85rem; color: #64748b;">No hay letras sincronizadas disponibles.</p>';
+          if (!currentLyrics || currentLyrics.length === 0) {
+            container.innerHTML = '<p style="font-size: 0.85rem; color: var(--text-sub);">Sin letra disponible.</p>';
             return;
           }
-          container.innerHTML = currentTrackLyrics.map(line => 
+          container.innerHTML = currentLyrics.map(line => 
             '<div class="lyrics-line">' + line.text + '</div>'
           ).join('');
         }
@@ -610,8 +729,7 @@ end sub</pre>
           document.getElementById('lyricsPanel').classList.toggle('active');
         }
 
-        loadCatalog(); loadQueue();
-        setInterval(loadQueue, 3000);
+        loadCatalog();
         setInterval(loadCatalog, 10000);
       </script>
     </body>
