@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:22-slim
 
 # Instalar ffmpeg y python3 requeridos por yt-dlp
 RUN apt-get update && apt-get install -y \
