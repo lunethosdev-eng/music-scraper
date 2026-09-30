@@ -412,134 +412,115 @@ app.get('/api/tracks/:id/stream', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// DASHBOARD WEB & DOCUMENTACIÓN (APPLE DESIGN LANGUAGE)
+// DASHBOARD WEB & DOCUMENTACIÓN
 // ---------------------------------------------------------------------------
 app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Music Server</title>
-      <style>
-        :root {
-          --bg-primary: #000000;
-          --bg-surface: #1c1c1e;
-          --bg-glass: rgba(28, 28, 30, 0.75);
-          --accent: #fa2d48;
-          --text-main: #ffffff;
-          --text-sub: #8e8e93;
-          --border: rgba(255, 255, 255, 0.1);
-        }
+  const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Music Server</title>
+  <style>
+    :root {
+      --bg-primary: #000000;
+      --bg-surface: #1c1c1e;
+      --bg-glass: rgba(28, 28, 30, 0.75);
+      --accent: #fa2d48;
+      --text-main: #ffffff;
+      --text-sub: #8e8e93;
+      --border: rgba(255, 255, 255, 0.1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif; background: var(--bg-primary); color: var(--text-main); padding-bottom: 120px; }
+    header { position: sticky; top: 0; z-index: 50; background: var(--bg-glass); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+    .logo-group { display: flex; align-items: center; gap: 0.75rem; }
+    .logo-group svg { fill: var(--accent); width: 24px; height: 24px; }
+    h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
+    nav { display: flex; gap: 0.5rem; background: rgba(120, 120, 128, 0.12); padding: 3px; border-radius: 9px; }
+    nav button { background: transparent; border: none; color: var(--text-sub); padding: 0.4rem 1rem; border-radius: 7px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s ease; }
+    nav button.active { background: #636366; color: #fff; }
+    .container { max-width: 1200px; margin: 2rem auto; padding: 0 1.5rem; }
+    .grid-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
+    @media (max-width: 850px) { .grid-layout { grid-template-columns: 1fr; } }
+    .search-box { display: flex; gap: 0.75rem; margin-bottom: 2rem; position: relative; }
+    .search-box input { flex: 1; padding: 0.85rem 1rem 0.85rem 2.8rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; color: #fff; font-size: 0.95rem; outline: none; transition: border-color 0.2s; }
+    .search-box input:focus { border-color: var(--accent); }
+    .search-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); fill: var(--text-sub); width: 18px; height: 18px; }
+    .btn-apple { background: var(--accent); color: white; border: none; padding: 0.85rem 1.5rem; border-radius: 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s; }
+    .btn-apple:hover { opacity: 0.9; }
+    .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 1.25rem; }
+    .track-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; cursor: pointer; transition: transform 0.25s ease, box-shadow 0.25s ease; }
+    .track-card:hover { transform: scale(1.02); box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    .cover-container { position: relative; width: 100%; aspect-ratio: 1; background: #2c2c2e; overflow: hidden; }
+    .cover-img, .cover-video { width: 100%; height: 100%; object-fit: cover; }
+    .track-info { padding: 0.85rem; }
+    .track-title { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.2rem; }
+    .track-artist { font-size: 0.8rem; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .queue-panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.25rem; height: fit-content; }
+    .queue-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+    .queue-item { background: rgba(255,255,255,0.04); padding: 0.85rem; border-radius: 10px; margin-bottom: 0.75rem; border: 1px solid var(--border); font-size: 0.85rem; }
+    .progress-bar-bg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 0.6rem; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s ease; }
+    .player-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg-glass); backdrop-filter: blur(25px); border-top: 1px solid var(--border); padding: 0.85rem 2rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; z-index: 100; }
+    .player-left { display: flex; align-items: center; gap: 1rem; min-width: 240px; }
+    .player-cover-box { width: 48px; height: 48px; border-radius: 8px; overflow: hidden; background: #2c2c2e; flex-shrink: 0; }
+    .player-cover-box img, .player-cover-box video { width: 100%; height: 100%; object-fit: cover; }
+    audio { flex: 1; max-width: 500px; height: 36px; }
+    .btn-icon { background: rgba(255,255,255,0.08); border: none; padding: 0.6rem; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+    .btn-icon:hover { background: rgba(255,255,255,0.15); }
+    .btn-icon svg { fill: #fff; width: 18px; height: 18px; }
+    .lyrics-panel { display: none; position: fixed; right: 2rem; bottom: 85px; width: 360px; max-height: 420px; background: var(--bg-glass); backdrop-filter: blur(30px); border: 1px solid var(--border); border-radius: 18px; padding: 1.25rem; overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.6); z-index: 99; }
+    .lyrics-panel.active { display: block; }
+    .lyrics-line { font-size: 0.95rem; line-height: 1.5; margin-bottom: 0.75rem; color: var(--text-sub); transition: color 0.2s; }
+    .lyrics-line.active { color: #fff; font-weight: 600; }
+    .doc-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; }
+    .doc-card h3 { color: var(--accent); margin-bottom: 0.5rem; font-size: 1.1rem; font-weight: 600; }
+    pre { background: #000; padding: 1.2rem; border-radius: 10px; color: #34d399; font-family: "SF Mono", Menlo, monospace; font-size: 0.85rem; overflow-x: auto; border: 1px solid var(--border); margin-top: 0.75rem; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo-group">
+      <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+      <h1>Apple Music Core</h1>
+    </div>
+    <nav>
+      <button id="btnTabDashboard" class="active" onclick="switchTab('dashboard')">Catálogo</button>
+      <button id="btnTabDocs" onclick="switchTab('docs')">Documentación API</button>
+    </nav>
+  </header>
 
-        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif; background: var(--bg-primary); color: var(--text-main); padding-bottom: 120px; }
-        
-        header { position: sticky; top: 0; z-index: 50; background: var(--bg-glass); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
-        .logo-group { display: flex; align-items: center; gap: 0.75rem; }
-        .logo-group svg { fill: var(--accent); width: 24px; height: 24px; }
-        h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
-        
-        nav { display: flex; gap: 0.5rem; background: rgba(120, 120, 128, 0.12); padding: 3px; border-radius: 9px; }
-        nav button { background: transparent; border: none; color: var(--text-sub); padding: 0.4rem 1rem; border-radius: 7px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s ease; }
-        nav button.active { background: #636366; color: #fff; }
-
-        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1.5rem; }
-        .grid-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
-        @media (max-width: 850px) { .grid-layout { grid-template-columns: 1fr; } }
-
-        .search-box { display: flex; gap: 0.75rem; margin-bottom: 2rem; position: relative; }
-        .search-box input { flex: 1; padding: 0.85rem 1rem 0.85rem 2.8rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; color: #fff; font-size: 0.95rem; outline: none; transition: border-color 0.2s; }
-        .search-box input:focus { border-color: var(--accent); }
-        .search-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); fill: var(--text-sub); width: 18px; height: 18px; }
-        
-        .btn-apple { background: var(--accent); color: white; border: none; padding: 0.85rem 1.5rem; border-radius: 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: opacity 0.2s; }
-        .btn-apple:hover { opacity: 0.9; }
-
-        .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 1.25rem; }
-        .track-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; cursor: pointer; transition: transform 0.25s ease, box-shadow 0.25s ease; }
-        .track-card:hover { transform: scale(1.02); box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        .cover-container { position: relative; width: 100%; aspect-ratio: 1; background: #2c2c2e; overflow: hidden; }
-        .cover-img, .cover-video { width: 100%; height: 100%; object-fit: cover; }
-        .track-info { padding: 0.85rem; }
-        .track-title { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.2rem; }
-        .track-artist { font-size: 0.8rem; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-        /* Panel de Cola */
-        .queue-panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.25rem; height: fit-content; }
-        .queue-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-        .queue-item { background: rgba(255,255,255,0.04); padding: 0.85rem; border-radius: 10px; margin-bottom: 0.75rem; border: 1px solid var(--border); font-size: 0.85rem; }
-        .progress-bar-bg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 0.6rem; overflow: hidden; }
-        .progress-bar-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s ease; }
-
-        /* Reproductor Estilo iOS */
-        .player-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg-glass); backdrop-filter: blur(25px); border-top: 1px solid var(--border); padding: 0.85rem 2rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; z-index: 100; }
-        .player-left { display: flex; align-items: center; gap: 1rem; min-width: 240px; }
-        .player-cover-box { width: 48px; height: 48px; border-radius: 8px; overflow: hidden; background: #2c2c2e; flex-shrink: 0; }
-        .player-cover-box img, .player-cover-box video { width: 100%; height: 100%; object-fit: cover; }
-        audio { flex: 1; max-width: 500px; height: 36px; }
-        .btn-icon { background: rgba(255,255,255,0.08); border: none; padding: 0.6rem; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
-        .btn-icon:hover { background: rgba(255,255,255,0.15); }
-        .btn-icon svg { fill: #fff; width: 18px; height: 18px; }
-
-        /* Panel de Letras Sincronizadas */
-        .lyrics-panel { display: none; position: fixed; right: 2rem; bottom: 85px; width: 360px; max-height: 420px; background: var(--bg-glass); backdrop-filter: blur(30px); border: 1px solid var(--border); border-radius: 18px; padding: 1.25rem; overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.6); z-index: 99; }
-        .lyrics-panel.active { display: block; }
-        .lyrics-line { font-size: 0.95rem; line-height: 1.5; margin-bottom: 0.75rem; color: var(--text-sub); transition: color 0.2s; }
-        .lyrics-line.active { color: #fff; font-weight: 600; }
-
-        /* Seccion Docs */
-        .doc-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; }
-        .doc-card h3 { color: var(--accent); margin-bottom: 0.5rem; font-size: 1.1rem; font-weight: 600; }
-        pre { background: #000; padding: 1.2rem; border-radius: 10px; color: #34d399; font-family: "SF Mono", Menlo, monospace; font-size: 0.85rem; overflow-x: auto; border: 1px solid var(--border); margin-top: 0.75rem; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-      </style>
-    </head>
-    <body>
-      <header>
-        <div class="logo-group">
-          <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
-          <h1>Apple Music Core</h1>
-        </div>
-        <nav>
-          <button id="btnTabDashboard" class="active" onclick="switchTab('dashboard')">Catálogo</button>
-          <button id="btnTabDocs" onclick="switchTab('docs')">Documentación API</button>
-        </nav>
-      </header>
-
-      <div class="container">
-        <!-- VISTA CATÁLOGO -->
-        <div id="tabDashboard" class="tab-content active">
-          <div class="grid-layout">
-            <div>
-              <div class="search-box">
-                <svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-                <input type="text" id="searchInput" placeholder="Buscar canción o artista..." />
-                <button class="btn-apple" onclick="handleSearch()">Buscar / Descargar</button>
-              </div>
-              <h2 style="margin-bottom: 1.25rem; font-size: 1.1rem; font-weight: 600; color: var(--text-sub);">Biblioteca Almacenada</h2>
-              <div id="catalogGrid" class="catalog-grid">Cargando biblioteca...</div>
-            </div>
-            
-            <div class="queue-panel">
-              <div class="queue-header">
-                <h3 style="font-size: 1rem; font-weight: 600;">Estado de Descargas</h3>
-                <span id="queueCount" style="font-size: 0.8rem; color: var(--text-sub);">(0)</span>
-              </div>
-              <div id="queueList">Sin descargas.</div>
-            </div>
+  <div class="container">
+    <div id="tabDashboard" class="tab-content active">
+      <div class="grid-layout">
+        <div>
+          <div class="search-box">
+            <svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            <input type="text" id="searchInput" placeholder="Buscar canción o artista..." />
+            <button class="btn-apple" onclick="handleSearch()">Buscar / Descargar</button>
           </div>
+          <h2 style="margin-bottom: 1.25rem; font-size: 1.1rem; font-weight: 600; color: var(--text-sub);">Biblioteca Almacenada</h2>
+          <div id="catalogGrid" class="catalog-grid">Cargando biblioteca...</div>
         </div>
+        
+        <div class="queue-panel">
+          <div class="queue-header">
+            <h3 style="font-size: 1rem; font-weight: 600;">Estado de Descargas</h3>
+            <span id="queueCount" style="font-size: 0.8rem; color: var(--text-sub);">(0)</span>
+          </div>
+          <div id="queueList">Sin descargas.</div>
+        </div>
+      </div>
+    </div>
 
-        <!-- VISTA DOCUMENTACIÓN -->
-        <div id="tabDocs" class="tab-content">
-          <div class="doc-card">
-            <h3>1. Descargar y Guardar MP3 en IndexedDB (Client-side Offline)</h3>
-            <p style="font-size: 0.9rem; color: var(--text-sub);">Guarda directamente el archivo MP3 binario dentro del almacenamiento IndexedDB del navegador del usuario sin requerir API keys adicionales en reproducciones posteriores:</p>
-            <pre>// Utilizando IndexedDB estándar del navegador
-function initDB() {
+    <div id="tabDocs" class="tab-content">
+      <div class="doc-card">
+        <h3>1. Guardar MP3 en IndexedDB (Client-side Offline)</h3>
+        <p style="font-size: 0.9rem; color: var(--text-sub);">Guarda el archivo binario dentro de IndexedDB del navegador para reproducir sin conexión:</p>
+        <pre>function initDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('MusicCacheDB', 1);
     request.onupgradeneeded = (e) => {
@@ -563,27 +544,12 @@ async function saveTrackOffline(track) {
     cover: track.cover_url,
     blob: blob
   });
-  console.log('Canción guardada localmente en IndexedDB');
-}
-
-async function playOfflineTrack(trackId) {
-  const db = await initDB();
-  const tx = db.transaction('tracks', 'readonly');
-  const req = tx.objectStore('tracks').get(trackId);
-  req.onsuccess = () => {
-    const record = req.result;
-    if (record) {
-      const audioUrl = URL.createObjectURL(record.blob);
-      const audio = new Audio(audioUrl);
-      audio.play();
-    }
-  };
 }</pre>
-          </div>
+      </div>
 
-          <div class="doc-card">
-            <h3>2. Estructura de Respuesta del Catálogo (`GET /api/tracks`)</h3>
-            <pre>[
+      <div class="doc-card">
+        <h3>2. Estructura de Respuesta del Catálogo (GET /api/tracks)</h3>
+        <pre>[
   {
     "id": "1727710000000",
     "title": "From The Start",
@@ -597,153 +563,154 @@ async function playOfflineTrack(trackId) {
     ]
   }
 ]</pre>
-          </div>
-        </div>
       </div>
+    </div>
+  </div>
 
-      <!-- PANEL DE LETRAS -->
-      <div id="lyricsPanel" class="lyrics-panel">
-        <h4 style="margin-bottom: 1rem; font-size: 1rem; font-weight: 600;">Letras de la canción</h4>
-        <div id="lyricsContainer">No hay letras disponibles.</div>
+  <div id="lyricsPanel" class="lyrics-panel">
+    <h4 style="margin-bottom: 1rem; font-size: 1rem; font-weight: 600;">Letras de la canción</h4>
+    <div id="lyricsContainer">No hay letras disponibles.</div>
+  </div>
+
+  <div class="player-bar">
+    <div class="player-left">
+      <div id="playerCoverBox" class="player-cover-box"></div>
+      <div>
+        <div id="playerTitle" style="font-weight: 600; font-size: 0.9rem;">Sin reproducción</div>
+        <div id="playerArtist" style="font-size: 0.78rem; color: var(--text-sub);">-</div>
       </div>
+    </div>
+    <audio id="audioPlayer" controls></audio>
+    <button class="btn-icon" onclick="toggleLyrics()" title="Letras">
+      <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+    </button>
+  </div>
 
-      <!-- REPRODUCTOR -->
-      <div class="player-bar">
-        <div class="player-left">
-          <div id="playerCoverBox" class="player-cover-box"></div>
-          <div>
-            <div id="playerTitle" style="font-weight: 600; font-size: 0.9rem;">Sin reproducción</div>
-            <div id="playerArtist" style="font-size: 0.78rem; color: var(--text-sub);">-</div>
-          </div>
-        </div>
-        <audio id="audioPlayer" controls></audio>
-        <button class="btn-icon" onclick="toggleLyrics()" title="Letras">
-          <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
-        </button>
-      </div>
+  <script>
+    let currentLyrics = [];
 
-      <script>
-        let currentLyrics = [];
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+      document.querySelectorAll('nav button').forEach(function(el) { el.classList.remove('active'); });
+      
+      if (tabName === 'dashboard') {
+        document.getElementById('tabDashboard').classList.add('active');
+        document.getElementById('btnTabDashboard').classList.add('active');
+      } else {
+        document.getElementById('tabDocs').classList.add('active');
+        document.getElementById('btnTabDocs').classList.add('active');
+      }
+    }
 
-        function switchTab(tabName) {
-          document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-          document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
-          
-          if (tabName === 'dashboard') {
-            document.getElementById('tabDashboard').classList.add('active');
-            document.getElementById('btnTabDashboard').classList.add('active');
-          } else {
-            document.getElementById('tabDocs').classList.add('active');
-            document.getElementById('btnTabDocs').classList.add('active');
-          }
+    async function loadCatalog() {
+      try {
+        const res = await fetch('/api/tracks');
+        const tracks = await res.json();
+        const grid = document.getElementById('catalogGrid');
+        grid.innerHTML = '';
+        
+        if (tracks.length === 0) {
+          grid.innerHTML = '<p style="color:var(--text-sub);">No hay pistas en el catálogo.</p>';
+          return;
         }
 
-        async function loadCatalog() {
-          const res = await fetch('/api/tracks');
-          const tracks = await res.json();
-          const grid = document.getElementById('catalogGrid');
-          grid.innerHTML = '';
-          
-          if (tracks.length === 0) {
-            grid.innerHTML = '<p style="color:var(--text-sub);">No hay pistas en el catálogo.</p>';
-            return;
-          }
+        tracks.forEach(function(track) {
+          const card = document.createElement('div');
+          card.className = 'track-card';
+          card.onclick = function() { playTrack(track); };
 
-          tracks.forEach(track => {
-            const card = document.createElement('div');
-            card.className = 'track-card';
-            card.onclick = () => playTrack(track);
+          const coverElement = track.animated_cover_url
+            ? '<video class="cover-video" src="' + track.animated_cover_url + '" autoplay loop muted poster="' + (track.cover_url || '') + '"></video>'
+            : '<img class="cover-img" src="' + (track.cover_url || 'https://via.placeholder.com/300') + '" />';
 
-            const coverElement = track.animated_cover_url
-              ? '<video class="cover-video" src="' + track.animated_cover_url + '" autoplay loop muted poster="' + (track.cover_url || '') + '"></video>'
-              : '<img class="cover-img" src="' + (track.cover_url || 'https://via.placeholder.com/300') + '" />';
+          card.innerHTML = 
+            '<div class="cover-container">' + coverElement + '</div>' +
+            '<div class="track-info">' +
+              '<div class="track-title">' + track.title + '</div>' +
+              '<div class="track-artist">' + track.artist + '</div>' +
+            '</div>';
+          grid.appendChild(card);
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
 
-            card.innerHTML = 
-              '<div class="cover-container">' + coverElement + '</div>' +
-              '<div class="track-info">' +
-                '<div class="track-title">' + track.title + '</div>' +
-                '<div class="track-artist">' + track.artist + '</div>' +
-              '</div>';
-            grid.appendChild(card);
-          });
-        }
+    function renderQueue(items) {
+      const list = document.getElementById('queueList');
+      document.getElementById('queueCount').innerText = '(' + items.length + ')';
+      if (items.length === 0) {
+        list.innerHTML = '<p style="font-size:0.85rem; color:var(--text-sub);">No hay tareas pendientes.</p>';
+        return;
+      }
+      list.innerHTML = '';
+      items.forEach(function(item) {
+        const div = document.createElement('div');
+        div.className = 'queue-item';
+        const progress = item.progress || 0;
+        div.innerHTML = 
+          '<div style="font-weight:600;">' + item.query + '</div>' +
+          '<div style="font-size:0.75rem; color:var(--text-sub); margin-top: 0.2rem;">' + item.progressMessage + '</div>' +
+          '<div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + progress + '%"></div></div>';
+        list.appendChild(div);
+      });
+    }
 
-        function renderQueue(items) {
-          const list = document.getElementById('queueList');
-          document.getElementById('queueCount').innerText = '(' + items.length + ')';
-          if (items.length === 0) {
-            list.innerHTML = '<p style="font-size:0.85rem; color:var(--text-sub);">No hay tareas pendientes.</p>';
-            return;
-          }
-          list.innerHTML = '';
-          items.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'queue-item';
-            
-            const progress = item.progress || 0;
-            div.innerHTML = 
-              '<div style="font-weight:600;">' + item.query + '</div>' +
-              '<div style="font-size:0.75rem; color:var(--text-sub); margin-top: 0.2rem;">' + item.progressMessage + '</div>' +
-              '<div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + progress + '%"></div></div>';
-            list.appendChild(div);
-          });
-        }
+    const evtSource = new EventSource('/api/queue/stream');
+    evtSource.onmessage = function(e) {
+      const queueItems = JSON.parse(e.data);
+      renderQueue(queueItems);
+    };
 
-        // Conexión SSE para actualización de porcentaje en tiempo real
-        const evtSource = new EventSource('/api/queue/stream');
-        evtSource.onmessage = function(e) {
-          const queueItems = JSON.parse(e.data);
-          renderQueue(queueItems);
-        };
+    async function handleSearch() {
+      const query = document.getElementById('searchInput').value.trim();
+      if (!query) return;
+      const res = await fetch('/api/search?q=' + encodeURIComponent(query));
+      const data = await res.json();
+      if (data.status === 'found') playTrack(data.tracks[0]);
+    }
 
-        async function handleSearch() {
-          const query = document.getElementById('searchInput').value.trim();
-          if (!query) return;
-          const res = await fetch('/api/search?q=' + encodeURIComponent(query));
-          const data = await res.json();
-          if (data.status === 'found') playTrack(data.tracks[0]);
-        }
+    function playTrack(track) {
+      const box = document.getElementById('playerCoverBox');
+      if (track.animated_cover_url) {
+        box.innerHTML = '<video src="' + track.animated_cover_url + '" autoplay loop muted poster="' + (track.cover_url || '') + '"></video>';
+      } else {
+        box.innerHTML = '<img src="' + (track.cover_url || '') + '" />';
+      }
 
-        function playTrack(track) {
-          const box = document.getElementById('playerCoverBox');
-          if (track.animated_cover_url) {
-            box.innerHTML = '<video src="' + track.animated_cover_url + '" autoplay loop muted poster="' + (track.cover_url || '') + '"></video>';
-          } else {
-            box.innerHTML = '<img src="' + (track.cover_url || '') + '" />';
-          }
+      document.getElementById('playerTitle').innerText = track.title;
+      document.getElementById('playerArtist').innerText = track.artist;
+      
+      const audio = document.getElementById('audioPlayer');
+      audio.src = track.audio_stream_url || ('/api/tracks/' + track.id + '/stream');
+      audio.play();
 
-          document.getElementById('playerTitle').innerText = track.title;
-          document.getElementById('playerArtist').innerText = track.artist;
-          
-          const audio = document.getElementById('audioPlayer');
-          audio.src = track.audio_stream_url || ('/api/tracks/' + track.id + '/stream');
-          audio.play();
+      currentLyrics = track.lyrics || [];
+      renderLyrics();
+    }
 
-          currentLyrics = track.lyrics || [];
-          renderLyrics();
-        }
+    function renderLyrics() {
+      const container = document.getElementById('lyricsContainer');
+      if (!currentLyrics || currentLyrics.length === 0) {
+        container.innerHTML = '<p style="font-size: 0.85rem; color: var(--text-sub);">Sin letra disponible.</p>';
+        return;
+      }
+      container.innerHTML = currentLyrics.map(function(line) { 
+        return '<div class="lyrics-line">' + line.text + '</div>';
+      }).join('');
+    }
 
-        function renderLyrics() {
-          const container = document.getElementById('lyricsContainer');
-          if (!currentLyrics || currentLyrics.length === 0) {
-            container.innerHTML = '<p style="font-size: 0.85rem; color: var(--text-sub);">Sin letra disponible.</p>';
-            return;
-          }
-          container.innerHTML = currentLyrics.map(line => 
-            '<div class="lyrics-line">' + line.text + '</div>'
-          ).join('');
-        }
+    function toggleLyrics() {
+      document.getElementById('lyricsPanel').classList.toggle('active');
+    }
 
-        function toggleLyrics() {
-          document.getElementById('lyricsPanel').classList.toggle('active');
-        }
+    loadCatalog();
+    setInterval(loadCatalog, 10000);
+  </script>
+</body>
+</html>`;
 
-        loadCatalog();
-        setInterval(loadCatalog, 10000);
-      </script>
-    </body>
-    </html>
-  `);
+  res.send(htmlContent);
 });
 
 async function seedInitialQueue() {
