@@ -177,14 +177,13 @@ async function fetchSyncedLyrics(artist, title) {
 }
 
 // ---------------------------------------------------------------------------
-// DESCARGA ROBUSTA CON YT-DLP (SIN COOKIES EXPIRADAS)
+// DESCARGA ROBUSTA CON YT-DLP
 // ---------------------------------------------------------------------------
 async function autoScrapeAndSave(searchQuery) {
   const trackId = Date.now().toString();
   const outputPath = path.join(TEMP_DIR, `${trackId}.mp3`);
   const userAgent = '"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"';
   
-  // Parámetros de simulación de cliente Android para evitar bloqueos
   const clientArgs = '--extractor-args "youtube:player_client=android,mweb"';
 
   try {
@@ -373,7 +372,6 @@ app.get('/', (req, res) => {
         .player-cover { width: 50px; height: 50px; border-radius: 6px; object-fit: cover; }
         audio { flex: 1; max-width: 450px; height: 36px; }
         
-        /* Estilos Documentación */
         .doc-section { background: #161e2e; border: 1px solid #1e293b; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
         .doc-section h3 { color: #38bdf8; margin-bottom: 0.75rem; font-size: 1.1rem; }
         pre { background: #0f172a; padding: 1rem; border-radius: 8px; color: #34d399; font-size: 0.85rem; overflow-x: auto; border: 1px solid #1e293b; margin-top: 0.5rem; }
@@ -441,7 +439,7 @@ app.get('/', (req, res) => {
             <h3>2. Guardar archivos MP3 localmente en la app cliente (Android TV / Kotlin)</h3>
             <p style="font-size: 0.9rem; color: #94a3b8;">Código Kotlin para descargar y almacenar el MP3 dentro de la memoria interna privada de Android TV para uso sin conexión.</p>
             <pre>suspend fun downloadAndCacheAudio(context: Context, trackId: String, streamUrl: String): File = withContext(Dispatchers.IO) {
-    val destinationFile = File(context.filesDir, "audio_$trackId.mp3")
+    val destinationFile = File(context.filesDir, "audio_" + trackId + ".mp3")
     if (!destinationFile.exists()) {
         val url = URL(streamUrl)
         url.openStream().use { input ->
@@ -495,8 +493,8 @@ end sub</pre>
 
       <script>
         function switchTab(tabName) {
-          document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-          document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+          document.querySelectorAll('nav button').forEach(function(el) { el.classList.remove('active'); });
           
           if (tabName === 'dashboard') {
             document.getElementById('tabDashboard').classList.add('active');
@@ -512,17 +510,16 @@ end sub</pre>
           const tracks = await res.json();
           const grid = document.getElementById('catalogGrid');
           grid.innerHTML = '';
-          tracks.forEach(track => {
+          tracks.forEach(function(track) {
             const card = document.createElement('div');
             card.className = 'track-card';
-            card.onclick = () => playTrack(track);
-            card.innerHTML = \`
-              <img class="cover-img" src="\${track.cover_url || 'https://via.placeholder.com/300'}" />
-              <div class="track-info">
-                <div style="font-weight: 600; font-size: 0.9rem;">\${track.title}</div>
-                <div style="font-size: 0.78rem; color: #94a3b8;">\${track.artist}</div>
-              </div>
-            \`;
+            card.onclick = function() { playTrack(track); };
+            const cover = track.cover_url || 'https://via.placeholder.com/300';
+            card.innerHTML = '<img class="cover-img" src="' + cover + '" />' +
+              '<div class="track-info">' +
+                '<div style="font-weight: 600; font-size: 0.9rem;">' + track.title + '</div>' +
+                '<div style="font-size: 0.78rem; color: #94a3b8;">' + track.artist + '</div>' +
+              '</div>';
             grid.appendChild(card);
           });
         }
@@ -531,13 +528,13 @@ end sub</pre>
           const res = await fetch('/api/queue');
           const items = await res.json();
           const list = document.getElementById('queueList');
-          document.getElementById('queueCount').innerText = \`(\${items.length})\`;
+          document.getElementById('queueCount').innerText = '(' + items.length + ')';
           if (items.length === 0) { list.innerHTML = '<p style="font-size:0.8rem;">Sin descargas activas.</p>'; return; }
           list.innerHTML = '';
-          items.forEach(item => {
+          items.forEach(function(item) {
             const div = document.createElement('div');
-            div.className = \`queue-item \${item.status}\`;
-            div.innerHTML = \`<div style="font-weight:600;">\${item.query}</div><div style="font-size:0.75rem; color:#94a3b8;">\${item.progressMessage}</div>\`;
+            div.className = 'queue-item ' + item.status;
+            div.innerHTML = '<div style="font-weight:600;">' + item.query + '</div><div style="font-size:0.75rem; color:#94a3b8;">' + item.progressMessage + '</div>';
             list.appendChild(div);
           });
         }
@@ -545,7 +542,7 @@ end sub</pre>
         async function handleSearch() {
           const query = document.getElementById('searchInput').value.trim();
           if (!query) return;
-          const res = await fetch(\`/api/search?q=\${encodeURIComponent(query)}\`);
+          const res = await fetch('/api/search?q=' + encodeURIComponent(query));
           const data = await res.json();
           if (data.status === 'found') playTrack(data.tracks[0]);
           loadQueue();
@@ -556,7 +553,7 @@ end sub</pre>
           document.getElementById('playerTitle').innerText = track.title;
           document.getElementById('playerArtist').innerText = track.artist;
           const audio = document.getElementById('audioPlayer');
-          audio.src = track.audio_stream_url || \`/api/tracks/\${track.id}/stream\`;
+          audio.src = track.audio_stream_url || ('/api/tracks/' + track.id + '/stream');
           audio.play();
         }
 
