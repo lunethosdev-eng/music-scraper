@@ -29,6 +29,9 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+// Ruta al archivo de cookies si existe
+const COOKIES_PATH = path.join(__dirname, 'cookies.txt');
+
 // ---------------------------------------------------------------------------
 // VERIFICACIÓN Y CREACIÓN AUTOMÁTICA DEL BUCKET EN SUPABASE
 // ---------------------------------------------------------------------------
@@ -213,8 +216,11 @@ function autoScrapeAndSave(queueItem) {
     let ytTitle = searchQuery;
     let ytThumbnail = null;
 
+    const useCookies = fs.existsSync(COOKIES_PATH);
+    const cookiesFlag = useCookies ? `--cookies "${COOKIES_PATH}"` : '';
+
     try {
-      const metaCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" --extractor-args "youtube:player_client=ios,web" --user-agent "${userAgent}" --dump-json --no-playlist --no-check-certificates`;
+      const metaCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" ${cookiesFlag} --extractor-args "youtube:player_client=ios,web" --user-agent "${userAgent}" --dump-json --no-playlist --no-check-certificates`;
       const { stdout: metaJson } = await execPromise(metaCmd);
       const parsedMeta = JSON.parse(metaJson);
       ytTitle = parsedMeta.title || searchQuery;
@@ -223,7 +229,6 @@ function autoScrapeAndSave(queueItem) {
       console.warn('Metadatos iniciales omitidos:', metaErr.message);
     }
 
-    // Argumentos optimizados para evitar HTTP 403 Forbidden
     const args = [
       `ytsearch1:${searchQuery}`,
       '--extractor-args', 'youtube:player_client=ios,web',
@@ -235,6 +240,10 @@ function autoScrapeAndSave(queueItem) {
       '--audio-quality', '0',
       '-o', outputPath
     ];
+
+    if (useCookies) {
+      args.push('--cookies', COOKIES_PATH);
+    }
 
     const ytdlpProcess = spawn('yt-dlp', args);
 
