@@ -1,6 +1,6 @@
 FROM node:22-slim
 
-# Instalar ffmpeg y python3 requeridos por yt-dlp
+# Instalar ffmpeg, python3 y curl requeridos por yt-dlp
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
