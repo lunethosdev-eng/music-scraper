@@ -29,37 +29,25 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
-const COOKIES_PATH = path.join(TEMP_DIR, 'cookies.txt');
-
 // ---------------------------------------------------------------------------
-// COOKIES EN CADENA RAW (INCRUSTADAS DIRECTAMENTE)
+// VERIFICACIÓN Y CREACIÓN AUTOMÁTICA DEL BUCKET EN SUPABASE
 // ---------------------------------------------------------------------------
-const RAW_COOKIES = `__Secure-YNID=22.YT=r58GsOmsXze4lDZQRPWMtlWDwZnr9Ezmf-n08YILW_L6XY57fetYR7PwIs4IZlaivpuWbgoTh1GNM1ganJtOsiDJ6T1McsmO0CHzGMJEEJihApXELnEFUPC9ec1xZFGt9lmU9m0Ga1lKaDyvLS7UIJ-4YJvA2c6Z3D6zZXvZdL22dFyVrV-76Yv3XcLY165ZwkGgQ8oiocGIqXmgr8rIghhWUIW-5M76jaD7RvXvQjX_DMD9O4ZSiDuZqxa5fCsByqJBEYUG_-jqtLYNak_GoJTO1dNqvnB5knpbQYbg-JYZLi2ykEDYtt25oxUXtTUA3oDTQunL4Runo0OorGAVeA;VISITOR_INFO1_LIVE=BxKm35EsG5Q;VISITOR_PRIVACY_METADATA=CgJTVhIEGgAgLw%3D%3D;PREF=f4=4000000&f6=40000000&tz=America.El_Salvador;ST-106zlbk=csn=3Ha7SzOZccoZQSzm&itct=COYFEIf2BBgBIhMI06HLn6mAlwMVYcY_BB17symnWg9GRXdoYXRfdG9fd2F0Y2iaAQUIJBCOHsoBBMclzEo%3D;ST-1svmrcp=csn=3Ha7SzOZccoZQSzm&itct=CIEFELOmCiITCNOhy5-pgJcDFWHGPwQde7Mpp8oBBMclzEo%3D;ST-116m6d6=csn=SDc8GI4Q0Nd59JWd&itct=CLQEENwwIhMI8Ka4pqmAlwMVzTeQBh3rtznKMgpnLWhpZ2gtcmVjWg9GRXdoYXRfdG9fd2F0Y2iaAQYQjh4YngHKAQTHJcxK;ST-hcbf8d=session_logininfo=AFmmF2swRAIgY4enVVEgzzGBr5VdBXzr3SPUzshGuk4YBjYeVSvtSa8CIGawZb10rnFdDL219iFJlepS8MIww2Szc460S7n_q3nj%3AQUQ3MjNmeVgyNDF1ZkpiY2p5NEpjRXB1RUtkTjFBWVRaaVpMRXNwQWpsRm5VSGNpZ1Y4UWJ3Ul9jMF91T2NnMzdIbzU1ZVBfb25zdlJZNDZZMWZra0FPV0R0Si1ZZzdlajJISXVDbHJOU2RFamk1WGhVQlZnVDlvb2Y5OU9TaWt4UXplQjJQdElLVzVaUTNnZzBmN2dkbDRJN0xuTnBKS3pB;CONSISTENCY=AJDB8J-zS4s-iLt4ka5_7BKpLErl6VkMoWKcYUgaksgi00PD0WBz47ToGVLYkPyHKc_kvLhdl3ie2esS50vmPlxdPX2_kt7f4TSOrubnORaHENPnza29e44nD6wisyPJXCX3HJFcegb3J01FM2fmDFCx;NID=CvkBCAESqwEBOxGDSDOxY2wSO_SDLP8_FBJMJW-eOrxcA3EejCbwqW_zZQYGnCsmkWifgVEAWCUELcXsSQp3yZ7FROQAkkv3Wyfek6jUVeQUXPa6wnREbyekTMeQ17aT53Mi3ZCIiqJHgXHMK4LktRO7Xt8Jgc9L3l3UrrTDyvDfpkwIAnp1tLpdc1QZztenYd5DHkjCEKAFm5RhZDrBmrXPiunQK5PKSPYEmKSq0gvkH2EoATJFAdKsB89bLzZgXTUIak0sGfoxDr4CWzX6pffUd8XfDY235VyjSt4wJtTgFYJ_d82aswSS2QHyOc_hvh6XeA9cXkRRlv4P;ST-2us7v6=csn=yZqZsvr_rU-ew3a5&itct=COoDENwwIhMIlsiTy6mAlwMVWuRyCR1UIBBYMgpnLWhpZ2gtcmVjWg9GRXdoYXRfdG9fd2F0Y2iaAQYQjh4YngHKAQTHJcxK;ST-uwicob=session_logininfo=AFmmF2swRAIgY4enVVEgzzGBr5VdBXzr3SPUzshGuk4YBjYeVSvtSa8CIGawZb10rnFdDL219iFJlepS8MIww2Szc460S7n_q3nj%3AQUQ3MjNmeVgyNDF1ZkpiY2p5NEpjRXB1RUtkTjFBWVRaaVpMRXNwQWpsRm5VSGNpZ1Y4UWJ3Ul9jMF91T2NnMzdIbzU1ZVBfb25zdlJZNDZZMWZra0FPV0R0Si1ZZzdlajJISXVDbHJOU2RFamk1WGhVQlZnVDlvb2Y5OU9TaWt4UXplQjJQdElLVzVaUTNnZzBmN2dkbDRJN0xuTnBKS3pB;ST-wfba0p=csn=q8gmqDSic-E0dSqR&itct=COMBEKSBBBgCIhMIhdar866AlwMVq-vjBx0PVSWiygEExyXMSg%3D%3D&endpoint=%7B%22clickTrackingParams%22%3A%22COMBEKSBBBgCIhMIhdar866AlwMVq-vjBx0PVSWiygEExyXMSg%3D%3D%22%2C%22commandMetadata%22%3A%7B%22webCommandMetadata%22%3A%7B%22url%22%3A%22%2Flogout%22%2C%22webPageType%22%3A%22WEB_PAGE_TYPE_UNKNOWN%22%2C%22rootVe%22%3A83769%7D%7D%2C%22signOutEndpoint%22%3A%7B%22hack%22%3Atrue%7D%7D&session_logininfo=AFmmF2swRAIgY4enVVEgzzGBr5VdBXzr3SPUzshGuk4YBjYeVSvtSa8CIGawZb10rnFdDL219iFJlepS8MIww2Szc460S7n_q3nj%3AQUQ3MjNmeVgyNDF1ZkpiY2p5NEpjRXB1RUtkTjFBWVRaaVpMRXNwQWpsRm5VSGNpZ1Y4UWJ3Ul9jMF91T2NnMzdIbzU1ZVBfb25zdlJZNDZZMWZra0FPV0R0Si1ZZzdlajJISXVDbHJOU2RFamk1WGhVQlZnVDlvb2Y5OU9TaWt4UXplQjJQdElLVzVaUTNnZzBmN2dkbDRJN0xuTnBKS3pB;GPS=1;ST-1s651f4=gs_l=youtube.3..0i512i433k1l3j0i512k1j0i512i433k1j0i512i433i131k1j0i512k1j0i512i433k1l2j0i512k1j0i512i433k1j0i512i433i47k1j0i512i433k1j0i512i433i131i650k1...0.6368......0.496.980.4-2..........4.......0..0i512i47k1.1387&oq=hola&itct=CA0Q7VAiEwj755DNwpSXAxVGS0IHHc1SKS3KAQR_xoX1&csn=M_sBIuIzkcp9_nbA&endpoint=%7B%22clickTrackingParams%22%3A%22CA0Q7VAiEwj755DNwpSXAxVGS0IHHc1SKS3KAQR_xoX1%22%2C%22commandMetadata%22%3A%7B%22webCommandMetadata%22%3A%7B%22url%22%3A%22%2Fresults%3Fsearch_query%3Dhola%22%2C%22webPageType%22%3A%22WEB_PAGE_TYPE_SEARCH%22%2C%22rootVe%22%3A4724%7D%7D%2C%22searchEndpoint%22%3A%7B%22query%22%3A%22hola%22%7D%7D;__Secure-1PSIDTS=sidts-CjUBkldj_5TZzF50217bHP8Z-655IzP7GyaXvMFYc93plFBWe92f1SUSjN55whL9qxYFB5rUhBAA;__Secure-3PSIDTS=sidts-CjUBkldj_5TZzF50217bHP8Z-655IzP7GyaXvMFYc93plFBWe92f1SUSjN55whL9qxYFB5rUhBAA;HSID=At_WAouxvVpP4Fezm;SSID=AxmwmoUn_nsVV3X1H;APISID=F8ojrPMfi80w8WqL/AX_qsUp36PRdoSKNM;SAPISID=ky4PfLYVtvpVYpFT/A9gHxWcsL2ikTA8ar;__Secure-1PAPISID=ky4PfLYVtvpVYpFT/A9gHxWcsL2ikTA8ar;__Secure-3PAPISID=ky4PfLYVtvpVYpFT/A9gHxWcsL2ikTA8ar;SID=g.a000DAl90ILP5Hj_KJeNM55NRJZmH3hfMxlW3ISjVNcyMqQ_8b4JYVsvX1pxseJPSynRerH3FAACgYKAcgSARESFQHGX2MinSB3JoXZbJnJP16d0XXFABoVAUF8yKqJTeFfIrA57MeSJHl3NVrJ0076;__Secure-1PSID=g.a000DAl90ILP5Hj_KJeNM55NRJZmH3hfMxlW3ISjVNcyMqQ_8b4JVV4bKhxqW9qIJyC0mvx-3wACgYKAQcSARESFQHGX2MihS6zzGBUtA3aH-trL1HefxoVAUF8yKqNXRix-fhBPV_9zNME_jRh0076;__Secure-3PSID=g.a000DAl90ILP5Hj_KJeNM55NRJZmH3hfMxlW3ISjVNcyMqQ_8b4JYSd5j4ZmVs0pIkg_3FBkIAACgYKAdoSARESFQHGX2Mik0fgvXZnRXYeb0EGB7c-KxoVAUF8yKqStMSWiWzpUz-6RbFpVKyV0076;LOGIN_INFO=AFmmF2swRgIhANrIfaa9aqsg8M5zRzDkbHnqL3HVUWSz_SbqcE-VSuptAiEA0_yg9igHlb85ujBCdnAx-hOu7-byiaa7PTWVdNTulbo:QUQ3MjNmd0RneDRjcG5XYllwTUw2Wnk5U0FaSzd5UWlBSzhFa252eDNuNnlNbFZKRm1KaXo3YkFkszVjNFJEWFJleERyYnFPVXRyTXlwZUM3eV9GM3EzTGtVQzh3ZjJBTU4taGREaDJhOW9tazFNSDNLUV94ZGJIYU9XRjJGQkZlcUxaN0EydnRTcERBYmhaUjhYOGlEUnF6aE9YUUhTZFpB;SIDCC=AKEyXzWLNj6nzYT5tBxhT5c5voKz5nXvBe-tum4IMj0Q3M9fawmjOHJvRFtdEOXxMCZFv5be;__Secure-1PSIDCC=AKEyXzXVj3xd91mOqekCJDHctHnMjvdIR6oQiHm_jLCw5aJVQaZWYzEavrmEzF9Ds4AmHIbRJg;__Secure-3PSIDCC=AKEyXzXJQwZMBbkRNSS44qBgn2A-z2TzA-vvA6LQEKxcVpQ8bQh8AC8DBku5o_CleNCAcSg_YA;ST-l3hjtt=session_logininfo=AFmmF2swRAIgYfhgfDrXLAJIGxdR_xmurautk3nM-2kiooGd7rIXEBsCICdjGTxLjluIlA_Kper6Gqkud6OWBUB6bU2zMrzOoTNm%3AQUQ3MjNmd09keEpjS0NOaFJWY2RpZkpBbHplSGVVSTIyUkpwVEZlM0E1OTlZeHlVUUZKaTBpNWpMX21lY2JPUVIxVnZta2RnaTMxd2VwUFdzb1ZsU1NETS1YTUtSVHVmV09LRTdMWWg3ZWVOT3o2Z21QSlJKZEpRczdUMjFULUMxQmRVUEx2U3E3V1lYcXE5OFpoMmI5MDNONnpNd2llTWN3;ST-1mzmz3u=csn=vP2Vb1-xAnn0Zhph&itct=CIIFELOmCiITCPOxmO7ClJcDFewVTwgdQ0cIIcoBBMclzEo%3D;ST-1baidrg=csn=vP2Vb1-xAnn0Zhph&itct=CNUBENwwIhMI87GY7sKUlwMV7BVPCB1DRwghMgpnLWhpZ2gtcmVjWg9GRXdoYXRfdG9fd2F0Y2iaAQYQjh4YngHKAQTHJcxK;ST-v6xsf6=csn=vP2Vb1-xAnn0Zhph&itct=CKoDEIf2BBgBIhMI87GY7sKUlwMV7BVPCB1DRwghWg9GRXdoYXRfdG9fd2F0Y2iaAQUIJBCOHsoBBMclzEo%3D;ST-pi9i8c=session_logininfo=AFmmF2swRgIhANrIfaa9aqsg8M5zRzDkbHnqL3HVUWSz_SbqcE-VSuptAiEA0_yg9igHlb85ujBCdnAx-hOu7-byiaa7PTWVdNTulbo%3AQUQ3MjNmd0RneDRjcG5XYllwTUw2Wnk5U0FaSzd5UWlBSzhFa252eDNuNnlNbFZKRm1KaXo3YkFkszVjNFJEWFJleERyYnFPVXRyTXlwZUM3eV9GM3EzTGtVQzh3ZjJBTU4taGREaDJhOW9tazFNSDNLUV94ZGJIYU9XRjJGQkZlcUxaN0EydnRTcERBYmhaUjhYOGlEUnF6aE9YUUhTZFpB;__Secure-BUCKET=CGE;YSC=iptGQkPdKvM;ST-3m3ncp=session_logininfo=AFmmF2swRgIhANrIfaa9aqsg8M5zRzDkbHnqL3HVUWSz_SbqcE-VSuptAiEA0_yg9igHlb85ujBCdnAx-hOu7-byiaa7PTWVdNTulbo%3AQUQ3MjNmd0RneDRjcG5XYllwTUw2Wnk5U0FaSzd5UWlBSzhFa252eDNuNnlNbFZKRm1KaXo3YkFkszVjNFJEWFJleERyYnFPVXRyTXlwZUM3eV9GM3EzTGtVQzh3ZjJBTU4taGREaDJhOW9tazFNSDNLUV94ZGJIYU9XRjJGQkZlcUxaN0EydnRTcERBYmhaUjhYOGlEUnF6aE9YUUhTZFpB;ST-1b=disableCache=true&session_logininfo=AFmmF2swRgIhANrIfaa9aqsg8M5zRzDkbHnqL3HVUWSz_SbqcE-VSuptAiEA0_yg9igHlb85ujBCdnAx-hOu7-byiaa7PTWVdNTulbo%3AQUQ3MjNmd0RneDRjcG5XYllwTUw2Wnk5U0FaSzd5UWlBSzhFa252eDNuNnlNbFZKRm1KaXo3YkFkszVjNFJEWFJleERyYnFPVXRyTXlwZUM3eV9GM3EzTGtVQzh3ZjJBTU4taGREaDJhOW9tazFNSDNLUV94ZGJIYU9XRjJGQkZlcUxaN0EydnRTcERBYmhaUjhYOGlEUnF6aE9YUUhTZFpB&endpoint=%7B%22browseEndpoint%22%3A%7B%22browseId%22%3AFEwhat_to_watch%22%7D%2C%22commandMetadata%22%3A%7B%22webCommandMetadata%22%3A%7B%22url%22%3A%22%2F%22%2C%22rootVe%22%3A3854%2C%22webPageType%22%3A%22WEB_PAGE_TYPE_BROWSE%22%7D%7D%7D;ST-yve142=session_logininfo=AFmmF2swRgIhANrIfaa9aqsg8M5zRzDkbHnqL3HVUWSz_SbqcE-VSuptAiEA0_yg9igHlb85ujBCdnAx-hOu7-byiaa7PTWVdNTulbo%3AQUQ3MjNmd0RneDRjcG5XYllwTUw2Wnk5U0FaSzd5UWlBSzhFa252eDNuNnlNbFZKRm1KaXo3YkFkszVjNFJEWFJleERyYnFPVXRyTXlwZUM3eV9GM3EzTGtVQzh3ZjJBTU4taGREaDJhOW9tazFNSDNLUV94ZGJIYU9XRjJGQkZlcUxaN0EydnRTcERBYmhaUjhYOGlEUnF6aE9YUUhTZFpB;ST-3opvp5=session_logininfo=AFmmF2swRgIhANrIfaa9aqsg8M5zRzDkbHnqL3HVUWSz_SbqcE-VSuptAiEA0_yg9igHlb85ujBCdnAx-hOu7-byiaa7PTWVdNTulbo%3AQUQ3MjNmd0RneDRjcG5XYllwTUw2Wnk5U0FaSzd5UWlBSzhFa252eDNuNnlNbFZKRm1KaXo3YkFkszVjNFJEWFJleERyYnFPVXRyTXlwZUM3eV9GM3EzTGtVQzh3ZjJBTU4taGREaDJhOW9tazFNSDNLUV94ZGJIYU9XRjJGQkZlcUxaN0EydnRTcERBYmhaUjhYOGlEUnF6aE9YUUhTZFpB;ST-tladcw=session_logininfo=AFmmF2swRgIhANrIfaa9aqsg8M5zRzDkbHnqL3HVUWSz_SbqcE-VSuptAiEA0_yg9igHlb85ujBCdnAx-hOu7-byiaa7PTWVdNTulbo%3AQUQ3MjNmd0RneDRjcG5XYllwTUw2Wnk5U0FaSzd5UWlBSzhFa252eDNuNnlNbFZKRm1KaXo3YkFkszVjNFJEWFJleERyYnFPVXRyTXlwZUM3eV9GM3EzTGtVQzh3ZjJBTU4taGREaDJhOW9tazFNSDNLUV94ZGJIYU9XRjJGQkZlcUxaN0EydnRTcERBYmhaUjhYOGlEUnF6aE9YUUhTZFpB;ST-xuwub9=session_logininfo=AFmmF2swRgIhANrIfaa9aqsg8M5zRzDkbHnqL3HVUWSz_SbqcE-VSuptAiEA0_yg9igHlb85ujBCdnAx-hOu7-byiaa7PTWVdNTulbo%3AQUQ3MjNmd0RneDRjcG5XYllwTUw2Wnk5U0FaSzd5UWlBSzhFa252eDNuNnlNbFZKRm1KaXo3YkFkszVjNFJEWFJleERyYnFPVXRyTXlwZUM3eV9GM3EzTGtVQzh3ZjJBTU4taGREaDJhOW9tazFNSDNLUV94ZGJIYU9XRjJGQkZlcUxaN0EydnRTcERBYmhaUjhYOGlEUnF6aE9YUUhTZFpB`;
-
-function generateNetscapeCookieFile(rawCookies, outputPath) {
-  const fileHeader = "# Netscape HTTP Cookie File\n# http://curl.haxx.se/rfc/cookie_spec.html\n\n";
-  const entries = rawCookies.split(';').map(cookiePair => {
-    const trimmed = cookiePair.trim();
-    if (!trimmed) return null;
-    const separatorIdx = trimmed.indexOf('=');
-    if (separatorIdx === -1) return null;
-
-    const name = trimmed.substring(0, separatorIdx);
-    const value = trimmed.substring(separatorIdx + 1);
-    const isSecure = name.startsWith('__Secure-') ? 'TRUE' : 'FALSE';
-    return `.youtube.com\tTRUE\t/\t${isSecure}\t2147483647\t${name}\t${value}`;
-  }).filter(Boolean);
-
-  fs.writeFileSync(outputPath, fileHeader + entries.join('\n'), 'utf8');
-}
-
-function getCookieFlag() {
+async function ensureBucketExists() {
   try {
-    generateNetscapeCookieFile(RAW_COOKIES, COOKIES_PATH);
-    return `--cookies "${COOKIES_PATH}"`;
+    const { data: buckets, error } = await supabase.storage.listBuckets();
+    if (error) {
+      console.error('Error listando buckets:', error.message);
+      return;
+    }
+    const exists = buckets.some(b => b.name === 'audio-files');
+    if (!exists) {
+      console.log('Creando bucket "audio-files" en Supabase...');
+      const { error: createErr } = await supabase.storage.createBucket('audio-files', { public: true });
+      if (createErr) console.error('Error creando bucket:', createErr.message);
+      else console.log('Bucket "audio-files" creado exitosamente.');
+    }
   } catch (err) {
-    console.error('Error al generar cookies:', err.message);
-    return '';
+    console.error('Error al verificar bucket:', err.message);
   }
 }
 
@@ -120,7 +108,7 @@ async function processQueue() {
 }
 
 // ---------------------------------------------------------------------------
-// OBTENCIÓN DE METADATOS Y COVERS ANIMADOS DE APPLE MUSIC
+// METADATOS Y LETRAS
 // ---------------------------------------------------------------------------
 async function fetchAppleMusicData(term) {
   try {
@@ -129,8 +117,6 @@ async function fetchAppleMusicData(term) {
     if (response.data.results && response.data.results.length > 0) {
       const track = response.data.results[0];
       const highResCover = track.artworkUrl100 ? track.artworkUrl100.replace('100x100bb', '1000x1000bb') : null;
-      
-      // Si Apple Music provee video preview lo tomamos como cover animado (MP4/M4V)
       const animatedCover = track.previewUrl || null;
 
       return {
@@ -191,51 +177,49 @@ async function fetchSyncedLyrics(artist, title) {
 }
 
 // ---------------------------------------------------------------------------
-// EXTRACCIÓN Y DESCARGA CON YT-DLP ROBUTIZADA
+// DESCARGA ROBUSTA CON YT-DLP (SIN COOKIES EXPIRADAS)
 // ---------------------------------------------------------------------------
 async function autoScrapeAndSave(searchQuery) {
   const trackId = Date.now().toString();
   const outputPath = path.join(TEMP_DIR, `${trackId}.mp3`);
-  const cookieFlag = getCookieFlag();
   const userAgent = '"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"';
+  
+  // Parámetros de simulación de cliente Android para evitar bloqueos
+  const clientArgs = '--extractor-args "youtube:player_client=android,mweb"';
 
   try {
-    // 1. Obtener metadatos mediante JSON para evitar bloqueos por salida multilinea
     let ytTitle = searchQuery;
     let ytThumbnail = null;
 
     try {
-      const metaCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" ${cookieFlag} --user-agent ${userAgent} --dump-json --no-playlist --no-check-certificates`;
+      const metaCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" ${clientArgs} --user-agent ${userAgent} --dump-json --no-playlist --no-check-certificates`;
       const { stdout: metaJson } = await execPromise(metaCmd);
       const parsedMeta = JSON.parse(metaJson);
       ytTitle = parsedMeta.title || searchQuery;
       ytThumbnail = parsedMeta.thumbnail || null;
     } catch (metaErr) {
-      console.warn('Metadatos directos de YouTube fallaron, procediendo a descarga directa:', metaErr.message);
+      console.warn('Obtención de metadatos de YouTube omitida, ejecutando descarga:', metaErr.message);
     }
 
-    // 2. Descarga del audio y conversión limpia a MP3 mediante FFmpeg
-    const downloadCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" ${cookieFlag} --user-agent ${userAgent} --js-runtimes node --no-playlist --no-check-certificates -x --audio-format mp3 --audio-quality 0 -o "${outputPath}"`;
+    const downloadCmd = `yt-dlp "ytsearch1:${searchQuery.replace(/"/g, '')}" ${clientArgs} --user-agent ${userAgent} --js-runtimes node --no-playlist --no-check-certificates -x --audio-format mp3 --audio-quality 0 -o "${outputPath}"`;
     await execPromise(downloadCmd);
 
     if (!fs.existsSync(outputPath)) {
-      throw new Error('yt-dlp finalizó pero no generó el archivo de audio MP3.');
+      throw new Error('yt-dlp no pudo generar el archivo MP3');
     }
 
-    // 3. Obtener metadatos enriquecidos de Apple Music
     const appleData = await fetchAppleMusicData(searchQuery);
     const finalTitle = appleData.title || ytTitle.split('-')[1]?.trim() || ytTitle;
     const finalArtist = appleData.artist || ytTitle.split('-')[0]?.trim() || 'Artista';
     const finalCover = appleData.coverUrl || ytThumbnail;
     const finalAnimatedCover = appleData.animatedCoverUrl || null;
 
-    // 4. Obtener letras sincronizadas
     const lyrics = await fetchSyncedLyrics(finalArtist, finalTitle);
 
-    // 5. Subida a Supabase Storage
     const fileBuffer = fs.readFileSync(outputPath);
     const audioStoragePath = `tracks/${trackId}_${finalArtist.replace(/[^a-zA-Z0-9]/g, '_')}.mp3`;
 
+    // Subida a Supabase Storage
     const { error: uploadErr } = await supabase.storage
       .from('audio-files')
       .upload(audioStoragePath, fileBuffer, { contentType: 'audio/mpeg', upsert: true });
@@ -243,7 +227,7 @@ async function autoScrapeAndSave(searchQuery) {
     if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     if (uploadErr) throw uploadErr;
 
-    // 6. Registro en base de datos Supabase
+    // Guardado en BD Supabase
     const { data: dbTrack, error: dbErr } = await supabase
       .from('tracks')
       .insert([{
@@ -268,9 +252,8 @@ async function autoScrapeAndSave(searchQuery) {
 }
 
 // ---------------------------------------------------------------------------
-// ENDPOINTS DE LA API
+// ENDPOINTS API
 // ---------------------------------------------------------------------------
-
 app.get('/api/ping', (req, res) => res.send('PONG'));
 
 app.get('/api/queue', (req, res) => {
@@ -279,7 +262,7 @@ app.get('/api/queue', (req, res) => {
 
 app.get('/api/search', async (req, res) => {
   const { q } = req.query;
-  if (!q) return res.status(400).json({ error: 'Parámetro de búsqueda "q" requerido' });
+  if (!q) return res.status(400).json({ error: 'Parámetro "q" es obligatorio' });
 
   try {
     const { data: existingTracks } = await supabase
@@ -294,7 +277,7 @@ app.get('/api/search', async (req, res) => {
     const queueItem = addToQueue(q);
     return res.json({
       status: 'queued',
-      message: `"${q}" se agregó a la cola de descargas automáticas.`,
+      message: `"${q}" se agregó a la cola.`,
       queueItem
     });
 
@@ -310,8 +293,7 @@ app.get('/api/tracks', async (req, res) => {
     .order('created_at', { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
-  
-  // Mapear con URLs públicas de audio completas para clientes externos
+
   const tracksWithUrls = data.map(track => ({
     ...track,
     audio_stream_url: `${req.protocol}://${req.get('host')}/api/tracks/${track.id}/stream`
@@ -351,7 +333,7 @@ app.get('/api/tracks/:id/stream', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// DASHBOARD WEB CON APOYO DE PLAYER Y COVERS ANIMADOS
+// DASHBOARD WEB CON SECCIÓN DE DOCUMENTACIÓN INTEGRADA
 // ---------------------------------------------------------------------------
 app.get('/', (req, res) => {
   res.send(`
@@ -360,17 +342,21 @@ app.get('/', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Music Server - Dashboard</title>
+      <title>Music Server & API Docs</title>
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; padding-bottom: 120px; }
         header { background: #161e2e; padding: 1.25rem 2rem; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
         h1 { font-size: 1.3rem; color: #38bdf8; }
-        .container { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
-        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
+        nav { display: flex; gap: 1rem; margin-top: 0.5rem; }
+        nav button { background: transparent; border: 1px solid #334155; color: #94a3b8; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; }
+        nav button.active { background: #0284c7; color: white; border-color: #0284c7; }
+        .container { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+        .grid-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
+        @media (max-width: 768px) { .grid-layout { grid-template-columns: 1fr; } }
         .search-box { display: flex; gap: 0.75rem; margin-bottom: 1.5rem; }
         input[type="text"] { flex: 1; padding: 0.85rem; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #fff; font-size: 0.95rem; outline: none; }
-        button { background: #0284c7; color: white; border: none; padding: 0.85rem 1.25rem; border-radius: 8px; font-weight: 600; cursor: pointer; }
+        .btn-main { background: #0284c7; color: white; border: none; padding: 0.85rem 1.25rem; border-radius: 8px; font-weight: 600; cursor: pointer; }
         .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; }
         .track-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; overflow: hidden; cursor: pointer; }
         .cover-img { width: 100%; aspect-ratio: 1; object-fit: cover; background: #0f172a; }
@@ -386,27 +372,116 @@ app.get('/', (req, res) => {
         .player-left { display: flex; align-items: center; gap: 1rem; }
         .player-cover { width: 50px; height: 50px; border-radius: 6px; object-fit: cover; }
         audio { flex: 1; max-width: 450px; height: 36px; }
+        
+        /* Estilos Documentación */
+        .doc-section { background: #161e2e; border: 1px solid #1e293b; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .doc-section h3 { color: #38bdf8; margin-bottom: 0.75rem; font-size: 1.1rem; }
+        pre { background: #0f172a; padding: 1rem; border-radius: 8px; color: #34d399; font-size: 0.85rem; overflow-x: auto; border: 1px solid #1e293b; margin-top: 0.5rem; }
+        code { font-family: monospace; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
       </style>
     </head>
     <body>
       <header>
-        <h1>🎵 Music Scraper & Server</h1>
+        <div>
+          <h1>🎵 Music Scraper & API</h1>
+          <nav>
+            <button id="btnTabDashboard" class="active" onclick="switchTab('dashboard')">Dashboard</button>
+            <button id="btnTabDocs" onclick="switchTab('docs')">📖 Documentación API</button>
+          </nav>
+        </div>
         <span style="font-size: 0.85rem; color: #34d399;">● Servidor Activo</span>
       </header>
+
       <div class="container">
-        <div>
-          <div class="search-box">
-            <input type="text" id="searchInput" placeholder="Buscar canción..." />
-            <button onclick="handleSearch()">Buscar / Descargar</button>
+        <!-- VISTA DASHBOARD -->
+        <div id="tabDashboard" class="tab-content active">
+          <div class="grid-layout">
+            <div>
+              <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Buscar canción o artista..." />
+                <button class="btn-main" onclick="handleSearch()">Buscar / Descargar</button>
+              </div>
+              <h2 style="margin-bottom: 1rem; font-size: 1.1rem; color: #94a3b8;">Catálogo Disponible</h2>
+              <div id="catalogGrid" class="catalog-grid"></div>
+            </div>
+            <div class="queue-panel">
+              <h3 style="margin-bottom: 1rem;">⚡ Cola de Descargas <span id="queueCount">(0)</span></h3>
+              <div id="queueList">Cargando...</div>
+            </div>
           </div>
-          <h2 style="margin-bottom: 1rem; font-size: 1.1rem; color: #94a3b8;">Catálogo</h2>
-          <div id="catalogGrid" class="catalog-grid"></div>
         </div>
-        <div class="queue-panel">
-          <h3>⚡ Cola de Descargas <span id="queueCount">(0)</span></h3>
-          <div id="queueList">Cargando...</div>
+
+        <!-- VISTA DOCUMENTACIÓN -->
+        <div id="tabDocs" class="tab-content">
+          <div class="doc-section">
+            <h3>1. Obtener Catálogo de Música (Fetch API)</h3>
+            <p style="font-size: 0.9rem; color: #94a3b8;">Endpoint principal para obtener todas las canciones con URLs de streaming, portadas y letras sincronizadas.</p>
+            <pre>GET /api/tracks
+
+// Respuesta de la API:
+[
+  {
+    "id": "1727710000000",
+    "title": "From The Start",
+    "artist": "Laufey",
+    "album": "Bewitched",
+    "audio_stream_url": "https://music-f4qv.onrender.com/api/tracks/1727710000000/stream",
+    "cover_url": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/1000x1000bb.jpg",
+    "animated_cover_url": "https://audio-ssl.itunes.apple.com/m4v/preview.m4v",
+    "lyrics": [
+      { "time": 12.4, "text": "Don't look at me like that" }
+    ]
+  }
+]</pre>
+          </div>
+
+          <div class="doc-section">
+            <h3>2. Guardar archivos MP3 localmente en la app cliente (Android TV / Kotlin)</h3>
+            <p style="font-size: 0.9rem; color: #94a3b8;">Código Kotlin para descargar y almacenar el MP3 dentro de la memoria interna privada de Android TV para uso sin conexión.</p>
+            <pre>suspend fun downloadAndCacheAudio(context: Context, trackId: String, streamUrl: String): File = withContext(Dispatchers.IO) {
+    val destinationFile = File(context.filesDir, "audio_$trackId.mp3")
+    if (!destinationFile.exists()) {
+        val url = URL(streamUrl)
+        url.openStream().use { input ->
+            FileOutputStream(destinationFile).use { output -> input.copyTo(output) }
+        }
+    }
+    return@withContext destinationFile
+}</pre>
+          </div>
+
+          <div class="doc-section">
+            <h3>3. Guardar archivos MP3 localmente en Roku (BrightScript)</h3>
+            <p style="font-size: 0.9rem; color: #94a3b8;">Código para descargar y almacenar archivos MP3 en la memoria local `tmp:/` de dispositivos Roku.</p>
+            <pre>sub DownloadAndPlayAudio(trackId as String, streamUrl as String)
+    localPath = "tmp:/" + trackId + ".mp3"
+    if not createObject("roFileSystem").Exists(localPath)
+        transfer = createObject("roUrlTransfer")
+        transfer.SetUrl(streamUrl)
+        transfer.writeToFile(localPath)
+    end if
+
+    audioContent = createObject("roSGNode", "ContentNode")
+    audioContent.url = localPath
+    audioContent.streamformat = "mp3"
+
+    m.audioPlayer = createObject("roSGNode", "Audio")
+    m.audioPlayer.content = audioContent
+    m.audioPlayer.control = "play"
+end sub</pre>
+          </div>
+
+          <div class="doc-section">
+            <h3>4. Soporte para Covers Animados (Apple Music)</h3>
+            <p style="font-size: 0.9rem; color: #94a3b8;">Si la propiedad <code>animated_cover_url</code> está presente, utilízala con un reproductor de video en bucle para mostrar la portada animada de Apple Music.</p>
+            <pre>&lt;!-- En Android TV / Web: Usar tag video con autoplay y loop --&gt;
+&lt;video src="animated_cover_url" autoplay loop muted poster="cover_url"&gt;&lt;/video&gt;</pre>
+          </div>
         </div>
       </div>
+
       <div class="player-bar">
         <div class="player-left">
           <img id="playerCover" class="player-cover" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>" />
@@ -417,7 +492,21 @@ app.get('/', (req, res) => {
         </div>
         <audio id="audioPlayer" controls></audio>
       </div>
+
       <script>
+        function switchTab(tabName) {
+          document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+          document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
+          
+          if (tabName === 'dashboard') {
+            document.getElementById('tabDashboard').classList.add('active');
+            document.getElementById('btnTabDashboard').classList.add('active');
+          } else {
+            document.getElementById('tabDocs').classList.add('active');
+            document.getElementById('btnTabDocs').classList.add('active');
+          }
+        }
+
         async function loadCatalog() {
           const res = await fetch('/api/tracks');
           const tracks = await res.json();
@@ -437,6 +526,7 @@ app.get('/', (req, res) => {
             grid.appendChild(card);
           });
         }
+
         async function loadQueue() {
           const res = await fetch('/api/queue');
           const items = await res.json();
@@ -451,6 +541,7 @@ app.get('/', (req, res) => {
             list.appendChild(div);
           });
         }
+
         async function handleSearch() {
           const query = document.getElementById('searchInput').value.trim();
           if (!query) return;
@@ -459,6 +550,7 @@ app.get('/', (req, res) => {
           if (data.status === 'found') playTrack(data.tracks[0]);
           loadQueue();
         }
+
         function playTrack(track) {
           document.getElementById('playerCover').src = track.cover_url || '';
           document.getElementById('playerTitle').innerText = track.title;
@@ -467,6 +559,7 @@ app.get('/', (req, res) => {
           audio.src = track.audio_stream_url || \`/api/tracks/\${track.id}/stream\`;
           audio.play();
         }
+
         loadCatalog(); loadQueue();
         setInterval(loadQueue, 3000);
         setInterval(loadCatalog, 10000);
@@ -483,8 +576,9 @@ async function seedInitialQueue() {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Servidor de música activo en puerto ${PORT}`);
+  await ensureBucketExists();
   setTimeout(seedInitialQueue, 3000);
   setInterval(() => { axios.get(`http://localhost:${PORT}/api/ping`).catch(() => {}); }, 10 * 60 * 1000);
 });
