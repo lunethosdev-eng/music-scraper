@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const ws = require('ws');
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -18,7 +19,13 @@ app.use(express.json());
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ajbmpgnzkgtcmulocftd.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// Inicialización de Supabase con soporte explícito de WebSocket para Node.js
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { persistSession: false },
+  realtime: {
+    transport: ws
+  }
+});
 
 const TEMP_DIR = path.join(__dirname, 'tmp');
 if (!fs.existsSync(TEMP_DIR)) {
@@ -32,7 +39,7 @@ async function fetchAppleMusicCover(term) {
     const response = await axios.get(url);
     if (response.data.results && response.data.results.length > 0) {
       const track = response.data.results[0];
-      // Obtener versión de alta resolución
+      // Obtener versión de alta resolución (1000x1000)
       const highResCover = track.artworkUrl100.replace('100x100bb', '1000x1000bb');
       return { coverUrl: highResCover, album: track.collectionName };
     }
