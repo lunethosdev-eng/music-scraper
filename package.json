@@ -1,7 +1,7 @@
 {
   "name": "music-scraper-api",
-  "version": "1.0.0",
-  "description": "API de Scraping de Música, Auto-Download y Reproductor de Catálogo para Supabase",
+  "version": "1.1.0",
+  "description": "API de Scraping de Música con Cola de Descargas Asíncrona y Servidor Continuo",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
