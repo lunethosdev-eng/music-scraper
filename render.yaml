@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: music-scraper-api
+    env: docker
+    plan: free
+    region: oregon
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: SUPABASE_URL
+        value: https://ajbmpgnzkgtcmulocftd.supabase.co
+      - key: SUPABASE_SERVICE_ROLE
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqYm1wZ256a2d0Y211bG9jZnRkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDM0NTYyOSwiZXhwIjoyMTA1OTIxNjI5fQ.JIw6EUefVcnQ7-P8-lRg__bAhEJvjcQYGFfaXpk9Vik
