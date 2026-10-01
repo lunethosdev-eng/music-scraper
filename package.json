@@ -1,26 +1,20 @@
 {
-  "name": "music-scraper-render",
+  "name": "music-scraper-engine",
   "version": "1.0.0",
-  "description": "Scraper & API de Música con Supabase y yt-dlp para Render",
-  "main": "src/index.js",
+  "description": "Scraper & Streaming Engine for Music, Artwork and Lyrics",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node src/index.js",
-    "build": "npm install"
+    "build": "mkdir -p bin && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o bin/yt-dlp && chmod +x bin/yt-dlp && curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz | tar -xJ --strip-components=1 -C bin/ ffmpeg ffprobe && chmod +x bin/ffmpeg bin/ffprobe",
+    "start": "PATH=$PATH:$(pwd)/bin node src/server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.6.5",
+    "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "ffmpeg-static": "^5.2.0",
-    "fluent-ffmpeg": "^2.1.2",
     "node-cron": "^3.0.3",
-    "socket.io": "^4.7.4",
-    "ws": "^8.18.0",
-    "yt-dlp-exec": "latest"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "socket.io": "^4.7.4"
   }
 }
