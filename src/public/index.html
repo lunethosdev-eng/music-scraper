@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Music Scraper Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎵 Scraper y Servidor de Múisica</h1>
+      <p>Estado del sistema: <span id="status" class="online">ONLINE</span></p>
+    </header>
+
+    <div class="grid">
+      <!-- Sección Gráfica de Descargas -->
+      <div class="card">
+        <h3>📊 Velocidad de Descarga (Canciones / Hora)</h3>
+        <canvas id="downloadChart"></canvas>
+      </div>
+
+      <!-- Cola de Trabajo Activa -->
+      <div class="card">
+        <h3>⚡ Cola de Descargas Activas</h3>
+        <div id="active-queue-log">Esperando tareas de la cola...</div>
+      </div>
+    </div>
+
+    <!-- Catálogo y Reproductor -->
+    <div class="card full-width">
+      <h3>🎶 Catálogo de Canciones Descargadas</h3>
+      <div id="player-container">
+        <img id="current-cover" src="https://via.placeholder.com/150" alt="Cover">
+        <div class="info">
+          <h4 id="current-title">Selecciona una canción</h4>
+          <p id="current-artist">-</p>
+          <audio id="audio-player" controls></audio>
+        </div>
+      </div>
+
+      <table id="tracks-table">
+        <thead>
+          <tr>
+            <th>Portada</th>
+            <th>Título</th>
+            <th>Artista</th>
+            <th>Álbum</th>
+            <th>Letras</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody id="tracks-list"></tbody>
+      </table>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
