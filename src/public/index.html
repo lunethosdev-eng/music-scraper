@@ -5,55 +5,63 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Music Scraper & Streaming Server</title>
   <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-  <div class="app-layout">
-    <!-- Sidebar Navegación -->
+  <div class="app-wrapper">
+    <!-- Sidebar / Navegación -->
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-icon">🎵</div>
-        <h2>SoundCloud Core</h2>
+        <h2>🎵 Sekai Music</h2>
+        <span class="badge online">ONLINE</span>
       </div>
+
       <nav class="nav-menu">
-        <button class="nav-btn active" onclick="switchTab('catalog')">🎶 Catálogo & Player</button>
-        <button class="nav-btn" onclick="switchTab('search')">🔍 On-Demand Scraper</button>
-        <button class="nav-btn" onclick="switchTab('queue')">⚡ Cola de Descargas</button>
-        <button class="nav-btn" onclick="switchTab('docs')">📚 Documentación Roku/API</button>
+        <button class="nav-btn active" onclick="switchTab('player-tab')">🎶 Reproductor & Catálogo</button>
+        <button class="nav-btn" onclick="switchTab('queue-tab')">⚡ Monitor de Cola</button>
+        <button class="nav-btn" onclick="switchTab('docs-tab')">📖 Documentación & Roku API</button>
       </nav>
-      <div class="status-box">
-        <span class="status-indicator"></span>
-        <span id="status-text">Servidor ONLINE</span>
+
+      <div class="sidebar-footer">
+        <p>Servidor Render Activo</p>
+        <small>Port: 10000</small>
       </div>
     </aside>
 
-    <!-- Main Content -->
+    <!-- ÁREA PRINCIPAL -->
     <main class="main-content">
-      
-      <!-- TAB 1: CATÁLOGO Y REPRODUCTOR -->
-      <section id="tab-catalog" class="tab-content active">
-        <!-- Persistent Player Header -->
-        <div class="player-card">
-          <div class="player-artwork">
-            <img id="current-cover" src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300" alt="Cover">
+      <!-- TAB 1: REPRODUCTOR Y CATÁLOGO -->
+      <section id="player-tab" class="tab-content active">
+        <!-- BARRA DE BÚSQUEDA AUTOMÁTICA -->
+        <div class="search-section card">
+          <h3>🔍 Buscar o Descargar Canción bajo Demanda</h3>
+          <p>Escribe el nombre de cualquier canción o artista. Si no existe en el servidor, se descargará automáticamente.</p>
+          <div class="search-box">
+            <input type="text" id="search-input" placeholder="Ej: Bad Bunny Monaco, Eve Kaikai Kitan, Laufey...">
+            <button onclick="handleSearch()">Buscar / Descargar</button>
+          </div>
+          <div id="search-status" class="status-banner hidden"></div>
+        </div>
+
+        <!-- REPRODUCTOR MULTIMEDIA -->
+        <div class="player-card card">
+          <div class="cover-wrapper">
+            <img id="current-cover" src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&auto=format&fit=crop" alt="Cover">
           </div>
           <div class="player-details">
             <span class="now-playing-tag">REPRODUCIENDO AHORA</span>
             <h2 id="current-title">Selecciona una canción</h2>
-            <p id="current-artist">Artista - Álbum</p>
-            <audio id="audio-player" controls></audio>
-            <button class="lyrics-btn" onclick="toggleLyricsModal()">📜 Ver Letras LRC</button>
+            <h4 id="current-artist">Artista</h4>
+            <p id="current-album" class="subtext">Álbum: -</p>
+            <audio id="audio-player" controls style="width: 100%; margin-top: 15px;"></audio>
+            <div id="lyrics-preview" class="lyrics-box">Selecciona una canción para ver la letra...</div>
           </div>
         </div>
 
-        <!-- Tabla de Catálogo -->
-        <div class="card full-card">
-          <div class="card-header">
-            <h3>🎵 Canciones Descargadas en Supabase</h3>
-            <button class="btn-refresh" onclick="loadTracks()">🔄 Actualizar</button>
-          </div>
+        <!-- TABLA DE CANCIONES -->
+        <div class="card table-card">
+          <h3>🎶 Canciones Disponibles en Servidor</h3>
           <div class="table-responsive">
             <table>
               <thead>
@@ -62,7 +70,7 @@
                   <th>Título</th>
                   <th>Artista</th>
                   <th>Álbum</th>
-                  <th>Letras</th>
+                  <th>Letras LRC</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
@@ -72,81 +80,48 @@
         </div>
       </section>
 
-      <!-- TAB 2: BUSCADOR BAJO DEMANDA -->
-      <section id="tab-search" class="tab-content">
-        <div class="card">
-          <h3>🔍 Descarga Automática Bajo Demanda</h3>
-          <p class="subtitle">Si buscas una canción que no está en el backend, el scraper la descargará automáticamente a Supabase.</p>
-          <form id="search-form" onsubmit="handleOnDemandSearch(event)">
-            <div class="input-group">
-              <input type="text" id="search-input" placeholder="Ej: Bad Bunny - Monaco o Nombre del artista/canción..." required>
-              <button type="submit" class="btn-primary">Descargar / Buscar</button>
-            </div>
-          </form>
-          <div id="search-result-box" class="result-box hidden"></div>
-        </div>
-      </section>
-
-      <!-- TAB 3: COLA DE DESCARGAS Y GRÁFICO -->
-      <section id="tab-queue" class="tab-content">
+      <!-- TAB 2: MONITOR DE COLA Y MÉTRICAS -->
+      <section id="queue-tab" class="tab-content">
         <div class="grid-2">
           <div class="card">
-            <h3>📊 Velocidad de Descarga</h3>
+            <h3>📊 Velocidad de Procesamiento (Canciones/Hora)</h3>
             <canvas id="downloadChart"></canvas>
           </div>
           <div class="card">
-            <h3>⚡ Live Scraper Log Stream</h3>
-            <div id="active-queue-log" class="console-box">Esperando tareas de la cola...</div>
+            <h3>⚡ Eventos de Cola en Tiempo Real</h3>
+            <div id="active-queue-log" class="console-log">Esperando eventos de WebSocket...</div>
           </div>
-        </div>
-        <div class="card full-card">
-          <h3>📋 Histórico de Trabajos en Cola</h3>
-          <tbody id="queue-jobs-list"></tbody>
         </div>
       </section>
 
-      <!-- TAB 4: DOCUMENTACIÓN INTERACTIVA -->
-      <section id="tab-docs" class="tab-content">
+      <!-- TAB 3: DOCUMENTACIÓN CÓDIGO (ROKU Y CLIENTE OFFLINE) -->
+      <section id="docs-tab" class="tab-content">
         <div class="card">
-          <h2>📚 Documentación para Roku TV y Clientes Web</h2>
-          <p>Aprende a conectar tus apps para buscar, reproducir y caching offline.</p>
-          
-          <div class="doc-tabs">
-            <button class="doc-tab-btn active" onclick="switchDoc('roku')">Roku TV (BrightScript)</button>
-            <button class="doc-tab-btn" onclick="switchDoc('web')">Web (IndexedDB Offline)</button>
-            <button class="doc-tab-btn" onclick="switchDoc('api')">REST API Reference</button>
+          <h2>📖 Guía de Integración y Documentación API</h2>
+          <p>Utiliza las siguientes Guías y Componentes para conectar tus aplicaciones de <strong>Roku TV</strong> o implementar soporte **Offline** en clientes Web/Mobile.</p>
+
+          <div class="doc-block">
+            <h3>1. Endpoints de la API REST</h3>
+            <ul>
+              <li><code>GET /api/tracks</code> - Lista todas las canciones guardadas en Supabase.</li>
+              <li><code>GET /api/search?q={query}</code> - Busca localmente o dispara el scraper automático.</li>
+              <li><code>GET /api/download-stream/:id</code> - Redirige al MP3 directo en el Bucket de Supabase.</li>
+            </ul>
           </div>
 
-          <!-- Documentation Body Roku -->
-          <div id="doc-roku" class="doc-pane active">
-            <h4>GUÍA DE INTEGRACIÓN ROKU BRIGHTSCRIPT (`ROKU_CLIENT_GUIDE.brs`)</h4>
-            <p>Componente para buscar/descargar automáticamente y buffer local en `tmp:/`:</p>
-            <pre><code>' ROKU BRIGHTSCRIPT OFFLINE & AUTO-SCRAPER COMPONENT
+          <div class="doc-block">
+            <h3>2. Roku BrightScript Offline Component (`ROKU_CLIENT_GUIDE.brs`)</h3>
+            <pre><code>' ROKU BRIGHTSCRIPT OFFLINE MUSIC PLAYER COMPONENT
 
-' 1. Busca la canción; si no está, el backend la descarga automáticamente.
-Function SearchAndPlayTrack(searchQuery as String) as Object
-    request = CreateObject("roUrlTransfer")
-    request.SetUrl("https://TU-DOMINIO-RENDER.com/api/search-or-download")
-    request.AddHeader("Content-Type", "application/json")
-    
-    jsonQuery = FormatJson({ "query": searchQuery })
-    responseStr = request.PostFromString(jsonQuery)
-    response = ParseJson(responseStr)
-    
-    if response <> invalid and response.status = "available" then
-        DownloadAndPlayOffline(response.track.audio_url, response.track.id)
-    else
-        print "Canción en cola de descarga..."
-    end if
-End Function
-
-Sub DownloadAndPlayOffline(trackUrl as String, trackId as String)
+sub DownloadAndPlayOffline(trackUrl as String, trackId as String)
     localMp3Path = "tmp:/" + trackId + ".mp3"
     
+    ' 1. Transferencia mediante roUrlTransfer para buffering local
     xfer = CreateObject("roUrlTransfer")
     xfer.SetUrl(trackUrl)
     xfer.GetToFile(localMp3Path)
     
+    ' 2. Configurar Reproductor de Audio utilizando la ruta en tmp:/
     audioPlayer = CreateObject("roAudioPlayer")
     content = CreateObject("roAssociativeArray")
     content.Url = localMp3Path
@@ -154,12 +129,11 @@ Sub DownloadAndPlayOffline(trackUrl as String, trackId as String)
     
     audioPlayer.AddContent(content)
     audioPlayer.Play()
-End Sub</code></pre>
+end sub</code></pre>
           </div>
 
-          <!-- Documentation Body Web -->
-          <div id="doc-web" class="doc-pane">
-            <h4>CLIENTE WEB OFFLINE INDEXEDDB (`CLIENT_OFFLINE_INDEXEDDB.js`)</h4>
+          <div class="doc-block">
+            <h3>3. Cliente Web Offline con IndexedDB (`CLIENT_OFFLINE_INDEXEDDB.js`)</h3>
             <pre><code>class MusicOfflineClient {
   constructor() {
     this.dbName = "MusicOfflineDB";
@@ -186,51 +160,24 @@ End Sub</code></pre>
   async fetchAndCacheTrack(trackMetadata) {
     const audioRes = await fetch(trackMetadata.audio_url);
     const audioBlob = await audioRes.blob();
-    const coverRes = await fetch(trackMetadata.static_cover_url);
-    const coverBlob = await coverRes.blob();
 
     const record = {
       id: trackMetadata.id,
       title: trackMetadata.title,
       artist: trackMetadata.artist_name,
-      audioBlob, coverBlob,
-      lyrics: trackMetadata.synced_lyrics_lrc,
+      audioBlob: audioBlob,
       cachedAt: new Date()
     };
 
-    const tx = this.db.transaction(["tracks"], "readwrite");
-    tx.objectStore("tracks").put(record);
+    const transaction = this.db.transaction(["tracks"], "readwrite");
+    transaction.objectStore("tracks").put(record);
   }
 }</code></pre>
           </div>
-
-          <!-- Documentation Body API -->
-          <div id="doc-api" class="doc-pane">
-            <h4>REFERENCIA DE ENDPOINTS REST API</h4>
-            <ul>
-              <li><code>GET /api/tracks</code> - Lista todas las canciones disponibles.</li>
-              <li><code>POST /api/search-or-download</code> - Body: <code>{ "query": "Artista - Cancion" }</code></li>
-              <li><code>GET /api/download-stream/:id</code> - Stream directo MP3 para reproductor.</li>
-              <li><code>GET /api/queue</code> - Revisa el estado de descargas.</li>
-            </ul>
-          </div>
         </div>
       </section>
-
     </main>
   </div>
-
-  <!-- Modal Letras LRC -->
-  <div id="lyrics-modal" class="modal hidden">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>📜 Letras Sincronizadas (LRC)</h3>
-        <button onclick="toggleLyricsModal()" class="close-btn">&times;</button>
-      </div>
-      <pre id="lyrics-text">Cargando letras...</pre>
-    </div>
-  </div>
-
   <script src="app.js"></script>
 </body>
 </html>
