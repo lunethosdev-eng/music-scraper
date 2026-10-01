@@ -5,30 +5,34 @@ const { fetchAppleMusicCovers } = require('../services/metadata.service');
 const { fetchSyncedLyrics } = require('../services/lyrics.service');
 const { uploadFileToSupabase } = require('../services/storage.service');
 
-// Canciones y artistas reales de alta popularidad para la semilla inicial
-const POPULAR_SEED_TRACKS = [
-  { artist: "Laufey", title: "From The Start" },
-  { artist: "Grupo Frontera", title: "un x100to" },
-  { artist: "Bad Bunny", title: "MONACO" },
-  { artist: "Taylor Swift", title: "Cruel Summer" },
-  { artist: "Feid", title: "LUNA" },
-  { artist: "Peso Pluma", title: "LADY GAGA" },
-  { artist: "Billie Eilish", title: "BIRDS OF A FEATHER" },
-  { artist: "NewJeans", title: "Super Shy" },
-  { artist: "Her's", title: "What Once Was" },
-  { artist: "Eve", title: "Kaikai Kitan" }
+// Artistas configurados con canciones reales para la siembra inicial
+const POPULAR_ARTISTS = [
+  { name: "Bad Bunny", tracks: ["Monaco", "Tití Me Preguntó", "Ojitos Lindos", "DAKITI"] },
+  { name: "Eve", tracks: ["Kaikai Kitan", "Dramaturgy", "Anoko secret", "Bokurano"] },
+  { name: "Laufey", tracks: ["From The Start", "Promise", "Falling Behind", "Valentine"] },
+  { name: "Her's", tracks: ["What Once Was", "Cool with You", "Marcel", "Harvey"] },
+  { name: "Cuarteto de Nos", tracks: ["Porfiado", "Lo Malo de Ser Bueno", "El Hijo de Hernández", "Cinturón Gris"] },
+  { name: "Depresión Sonora", tracks: ["Ya no hay verano", "Hasta que llegue la muerte", "Como todo el mundo", "Gasolina y Mechero"] },
+  { name: "Cuco", tracks: ["Lo Que Siento", "Hydrocodone", "Amor de Siempre"] },
+  { name: "Milo J", tracks: ["Rara Vez", "M.A.I", "Dispara"] },
+  { name: "Junior H", tracks: ["Y Lloro", "Fin de Semana", "El Azul"] },
+  { name: "Grupo Frontera", tracks: ["un X100to", "No Se Va", "El Comienzo"] },
+  { name: "The Marías", tracks: ["Cariño", "Run Your Mouth", "Hush"] },
+  { name: "Kenshi Yonezu", tracks: ["Kick Back", "Lemon", "Peace Sign"] }
 ];
 
 async function seedInitialQueue() {
-  console.log('⚡ Poblando cola inicial con canciones reales...');
-  for (const track of POPULAR_SEED_TRACKS) {
-    const searchQuery = `${track.artist} ${track.title}`;
-    await supabase.from('download_queue').upsert({
-      track_title: track.title,
-      artist_name: track.artist,
-      search_query: searchQuery,
-      status: 'pending'
-    }, { onConflict: 'search_query' });
+  console.log('⚡ Poblando cola inicial con artistas y canciones reales...');
+  for (const item of POPULAR_ARTISTS) {
+    for (const trackTitle of item.tracks) {
+      const searchQuery = `${item.name} ${trackTitle}`;
+      await supabase.from('download_queue').upsert({
+        track_title: trackTitle,
+        artist_name: item.name,
+        search_query: searchQuery,
+        status: 'pending'
+      }, { onConflict: 'search_query' });
+    }
   }
 }
 
@@ -37,7 +41,7 @@ async function processQueueBatch(io) {
     .from('download_queue')
     .select('*')
     .eq('status', 'pending')
-    .limit(3);
+    .limit(5);
 
   if (error || !pendingJobs || pendingJobs.length === 0) return;
 
@@ -45,18 +49,22 @@ async function processQueueBatch(io) {
     try {
       await supabase.from('download_queue').update({ status: 'processing' }).eq('id', job.id);
       
-      if (io) io.emit('queue_update', { message: `Descargando: ${job.artist_name} - ${job.track_title}` });
+      const artist = job.artist_name || 'Artista_Desconocido';
+      const title = job.track_title || 'Cancion_Desconocida';
+      const searchQuery = job.search_query || `${artist} ${title}`;
 
-      const safeFilename = `${job.artist_name}_${job.track_title}_${Date.now()}`.replace(/[^a-zA-Z0-9]/g, '_');
+      if (io) io.emit('queue_update', { message: `Descargando: ${artist} - ${title}` });
+
+      const safeFilename = `${artist}_${title}`.replace(/[^a-zA-Z0-9]/g, '_');
 
       // 1. Descargar MP3 vía yt-dlp
-      const localMp3Path = await downloadAudioMP3(job.search_query, safeFilename);
+      const localMp3Path = await downloadAudioMP3(searchQuery, safeFilename);
 
-      // 2. Obtener Metadata & Covers (Apple Music API)
-      const metadata = await fetchAppleMusicCovers(job.artist_name, job.track_title);
+      // 2. Obtener Metadata & Covers (Apple Music) de forma segura
+      const metadata = await fetchAppleMusicCovers(artist, title);
 
-      // 3. Obtener Letras Sincronizadas
-      const lyricsLRC = await fetchSyncedLyrics(job.artist_name, job.track_title);
+      // 3. Obtener Lyrics LRC Sincronizados
+      const lyricsLRC = await fetchSyncedLyrics(artist, title);
 
       // 4. Subir Archivo MP3 a Supabase Storage
       const audioPublicUrl = await uploadFileToSupabase(
@@ -69,73 +77,38 @@ async function processQueueBatch(io) {
       // Limpiar archivo temporal local
       if (fs.existsSync(localMp3Path)) fs.unlinkSync(localMp3Path);
 
-      // 5. Guardar Registro Final en Supabase DB "tracks"
-      const { data: insertedTrack } = await supabase.from('tracks').upsert({
-        title: job.track_title,
-        artist_name: job.artist_name,
-        album: metadata.album,
-        duration_sec: metadata.durationSec,
+      // 5. Guardar Registro en la tabla "tracks"
+      await supabase.from('tracks').upsert({
+        title: title,
+        artist_name: artist,
+        album: metadata.album || 'Single',
+        duration_sec: metadata.durationSec || 180,
         audio_url: audioPublicUrl,
         static_cover_url: metadata.staticCover,
         animated_cover_url: metadata.animatedCover,
         synced_lyrics_lrc: lyricsLRC,
         source_platform: 'youtube/apple'
-      }, { onConflict: 'title,artist_name' }).select().single();
+      }, { onConflict: 'title,artist_name' });
 
+      // Marcar trabajo como completado
       await supabase.from('download_queue').update({ status: 'completed' }).eq('id', job.id);
 
       if (io) {
         io.emit('track_completed', {
-          track: insertedTrack || { title: job.track_title, artist_name: job.artist_name, static_cover_url: metadata.staticCover },
-          message: `Completada: ${job.artist_name} - ${job.track_title}`
+          title: title,
+          artist: artist,
+          cover: metadata.staticCover
         });
       }
 
     } catch (err) {
-      console.error(`[Worker Error] Falló descarga de ${job.search_query}:`, err.message);
+      console.error(`[Worker Error] Falló descarga de ${job?.search_query || 'desconocido'}:`, err.message);
       await supabase.from('download_queue').update({ 
         status: 'failed', 
-        error_message: err.message 
+        error_message: err.message || 'Error desconocido'
       }).eq('id', job.id);
     }
   }
 }
 
-// BÚSQUEDA Y AUTO-DESCARGA BAJO DEMANDA (Para Roku / Apps Móviles / Web)
-async function requestTrackScrape(artist, title, io) {
-  const searchQuery = `${artist} ${title}`.trim();
-
-  // 1. Buscar en la tabla 'tracks'
-  let queryBuilder = supabase.from('tracks').select('*');
-  if (artist) {
-    queryBuilder = queryBuilder.ilike('artist_name', `%${artist}%`).ilike('title', `%${title}%`);
-  } else {
-    queryBuilder = queryBuilder.or(`title.ilike.%${title}%,artist_name.ilike.%${title}%`);
-  }
-  
-  const { data: existingTracks } = await queryBuilder.limit(1);
-
-  if (existingTracks && existingTracks.length > 0) {
-    return { status: 'available', source: 'database', track: existingTracks[0] };
-  }
-
-  // 2. Si no existe, agregar a la cola
-  const { data: queued } = await supabase.from('download_queue').upsert({
-    track_title: title || "Unknown Track",
-    artist_name: artist || "Unknown Artist",
-    search_query: searchQuery,
-    status: 'pending'
-  }, { onConflict: 'search_query' }).select().single();
-
-  // Activar descarga inmediata
-  processQueueBatch(io);
-
-  return { 
-    status: 'downloading', 
-    source: 'scraper',
-    message: 'Canción no encontrada localmente. Se ha enviado al scraper para descarga inmediata.', 
-    queueItem: queued 
-  };
-}
-
-module.exports = { seedInitialQueue, processQueueBatch, requestTrackScrape };
+module.exports = { seedInitialQueue, processQueueBatch };
