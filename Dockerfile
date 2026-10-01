@@ -1,9 +1,10 @@
 FROM node:20-slim
 
-# Instalar dependencias del sistema: ffmpeg y python3
+# Instalar dependencias del sistema: ffmpeg, python3, el alias python y curl
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
+    python-is-python3 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
