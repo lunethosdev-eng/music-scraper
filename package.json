@@ -17,7 +17,7 @@
     "fluent-ffmpeg": "^2.1.2",
     "node-cron": "^3.0.3",
     "socket.io": "^4.7.4",
-    "yt-dlp-exec": "^2.5.5"
+    "yt-dlp-exec": "latest"
   },
   "engines": {
     "node": ">=18.0.0"
